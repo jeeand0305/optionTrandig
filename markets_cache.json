@@ -1,0 +1,14 @@
+{
+  "BTCUSDT": {
+    "id": "BTCUSDT",
+    "symbol": "BTCUSDT",
+    "active": true,
+    "type": "linear",
+    "linear": true,
+    "spot": false,
+    "margin": false,
+    "swap": true,
+    "future": false,
+    "option": false
+  }
+}

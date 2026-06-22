@@ -1,0 +1,54 @@
+
+linc=https://github.com/ccxt/ccxt/wiki/Manual#unified-api
+Единый API ccxt представляет собой подмножество методов, 
+общих для всех бирж. В настоящее время он содержит следующие 
+методы:
+
+fetchMarkets ()Функция получает список всех доступных рынков с биржи и возвращает массив объектов Market, определенных структурой Market (с такими свойствами, как symbol, base, quoteи т. д.). Некоторые биржи не имеют возможности получить список рынков через свой онлайн-API. В таких случаях список рынков жестко закодирован.
+fetchCurrencies ()Функция получает все доступные валюты с биржи и возвращает ассоциативный словарь валют (объекты со свойствами, такими как code, name, и т. д.). Некоторые биржи не предоставляют возможности получения валют через свой онлайн-API. В таких случаях валюты извлекаются из рыночных пар или задаются жестко.
+loadMarkets ([reload]): Возвращает список рынков в виде объекта, индексированного по символу, и кэширует его вместе с экземпляром биржи. Возвращает кэшированные рынки, если они уже загружены, если только флаг reload = trueне установлен принудительно.
+fetchOrderBook (symbol, limit = undefined, params = {})Получение книги ордеров L2/L3 для конкретного торгового символа на рынке.
+fetchStatus (params = {}): Возвращает информацию о статусе обмена либо из данных, жестко закодированных в экземпляре обмена, либо из API, если таковой имеется.
+fetchL2OrderBook (symbol, limit = undefined, params): Книга ордеров второго уровня (агрегированная по цене) для конкретного символа.
+fetchTrades (symbol, since, limit, params): Получение информации о последних сделках по конкретному торговому символу.
+fetchTicker (symbol)Получите последние данные по тикеру по торговому символу.
+fetchBalance (): Получение баланса.
+createOrder (symbol, type, side, amount, price, params)
+createOrders(orders, params)
+createLimitBuyOrder (symbol, amount, price, param)
+createLimitSellOrder (symbol, amount, price, param)
+createMarketBuyOrder (symbol, amount, param)
+createMarketSellOrder (symbol, amount, param)
+cancelOrder (id, symbol, params)
+fetchOrder (id, symbol, params)
+fetchOrders (symbol, since, limit, params)
+fetchOpenOrders (symbol, since, limit, params)
+fetchCanceledOrders (symbol, since, limit, params)
+fetchClosedOrders (symbol, since, limit, params)
+fetchMyTrades (symbol, since, limit, params)
+fetchOpenInterest (symbol, params)
+fetchVolatilityHistory (code, params)
+fetchUnderlyingAssets ()
+fetchSettlementHistory (symbol, since, limit, params)
+fetchLiquidations (symbol, since, limit, params)
+fetchMyLiquidations (symbol, since, limit, params)
+fetchGreeks (symbol, params)
+fetchAllGreeks (symbols, params)
+fetchCrossBorrowRate (code, params)
+fetchCrossBorrowRates (params)
+fetchIsolatedBorrowRate (symbol, params)
+fetchIsolatedBorrowRates (params)
+fetchOption (symbol, params)
+fetchOptionChain (code, params)
+fetchConvertQuote (fromCode, toCode, amount, params)
+createConvertTrade (id, fromCode, toCode, amount, params)
+fetchFundingRate (symbol, params)
+fetchFundingRates (symbols, params)
+fetchFundingRateHistory (symbol, since, limit, params)
+fetchFundingRateInterval (symbol, params)
+fetchFundingRateIntervals (symbols, params)
+fetchLongShortRatio (symbol, params)
+fetchAutoDeLeverageRank (symbol, params)
+fetchPositionAutoDeLeverageRank (symbol, params)
+fetchPositionsAutoDeLeverageRank (symbols, params)
+...
