@@ -191,23 +191,64 @@ class BybitOptionBot:
             
             # Сортируем даты по порядку (от ближайшей к дальней)
             sorted_dates = sorted(list(expirations))
-            
+            dictSortedDates = {i:sorted_dates[i] for i in range(len(sorted_dates))}
             # Выводим один лаконичный лог
             logger.debug(f"{base_coin} expiration dates: {', '.join(sorted_dates)}")
-            return sorted_dates
+            return dictSortedDates
             
         except Exception as e:
             logger.error(f"Ошибка при парсинге дат экспирации для {base_coin}: {e}")
             return []
 
+
+    def get_option_strikes(self, base_coin="BTC", expiration_date="2026-07-03"):
+        """
+        Парсит и возвращает уникальные цены страйков для монеты на 
+        конкретную дату экспирации.
+        :param base_coin: Например, 'BTC' или 'ETH'
+        :param expiration_date: Строка в формате 'YYYY-MM-DD' 
+        (из метода get_option_expiration_dates)
+        """
+        try:
+            # Загружаем рынки (используется кэш CCXT)
+            markets = self.exchange.load_markets()
+            
+            strikes = set()
+            for market in markets.values():
+                # Фильтруем: тип опцион + нужная монета
+                if market.get('type') == 'option' and market.get('base') == base_coin:
+                    # Извлекаем дату экспирации из контракта
+                    expiry_date = market.get('expiryDatetime')
+                    if expiry_date and expiry_date.startswith(expiration_date):
+                        # Забираем цену страйка (CCXT парсит её во float или int в поле 'strike')
+                        strike_price = market.get('info', {}).get('strikePrice')
+                        if strike_price:
+                            # Сохраняем как float для правильной сортировки чисел
+                            strikes.add(float(strike_price))
+            
+            # Сортируем страйки по возрастанию
+            sorted_strikes = sorted(list(strikes))
+            
+            # Переводим в красивый строковый вид для лога (убираем лишние .0 у целых чисел)
+            strikes_str = ", ".join([str(int(s) if s.is_integer() else s) for s in sorted_strikes])
+            
+            logger.info(f"{base_coin} strikes for {expiration_date}: {strikes_str}")
+            return sorted_strikes
+            
+        except Exception as e:
+            logger.error(f"Ошибка при парсинге страйков для {base_coin} на {expiration_date}: {e}")
+            return []
+
         
-# bybitOpt = BybitOptionBot()
+bybitOpt = BybitOptionBot()
 
 # getD = bybitOpt.get_historical_closes_candals("DOGE")
 # getD = bybitOpt.fetch_option_market_data('BTC')
 # getD = bybitOpt.check_connection_and_balance()
 # getD = bybitOpt.get_all_option_coins()
 # getD = bybitOpt.get_option_expiration_dates()
+getD = bybitOpt.get_option_strikes()#base_coin="SOL",
+                                  # expiration_date='2026-06-27')
 
-# logger.info(f"{getD}")
+logger.info(f"{getD}")
 

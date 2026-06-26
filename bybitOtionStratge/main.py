@@ -36,6 +36,12 @@ def main():
     logger.info(f'Выберете из представленызх дату экспернации оптион '
                 f'{allDatesExpiration}')
     
+    # ввести ключ даты экспирации
+    dateExpertion=analytics.get_valid_date_input(
+        allDateExpiration=allDatesExpiration)
+    logger.info(f" {dateExpertion}")
+    
+    
     
 # =====================================================================
 # ТОЧКА ЗАПУСКА

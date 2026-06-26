@@ -223,6 +223,41 @@ def get_valid_coin_input(all_coins):
         except Exception as e:
             # Перехватываем любые критические непредвиденные ошибки (например, Ctrl+C)
             logger.error(f"Непредвиденная ошибка при вводе: {e}")
+            
+            
+def get_valid_date_input(allDateExpiration=dict):
+    """
+    Защищенная функция для ввода монеты.
+    Цикл не выпустит пользователя, пока он не введет корректный актив.
+    """
+    while True:
+        try:
+            # Запрашиваем ввод, очищаем от пробелов и переводим в верхний регистр
+            date_expirition = input(f"Выбери дату экспирации и введите номер указанных"
+                              f"в словоре (или 'EXIT' для выхода): ")
+            
+            if date_expirition == 'EXIT' or 'exit' == date_expirition:
+                logger.info("Выход из программы по требованию пользователя.")
+                return None
+            
+            if int(date_expirition):
+                logger.info(f"Вы ввели не целое число")
+                date_expirition = int(date_expirition)
+                # Проверяем, есть ли введенная монета в списке доступных на Bybit
+                if date_expirition in allDateExpiration:
+                    return allDateExpiration[date_expirition]
+            else:
+                # Если нет в словоре, принудительно вызываем исключение (ValueError)
+                   raise ValueError(f"Нет такого ключа '{date_expirition}' в Bybit!")
+                
+        except ValueError as err:
+            # Перехватываем нашу ошибку ввода и показываем пользователю, не роняя скрипт
+            logger.warning(f"Ошибка ввода: {err} Пожалуйста, попробуйте еще раз.")
+        except Exception as e:
+            # Перехватываем любые критические непредвиденные ошибки (например, Ctrl+C)
+            logger.error(f"Непредвиденная ошибка при вводе: {e}")
+            
+
   
 # test work coda   
 # _______________________________________________________
