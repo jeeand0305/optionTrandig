@@ -14,17 +14,29 @@ def main():
     nalichie balance
     '''
     clientBybit=bybit_client.BybitOptionBot()
-    mybalance=clientBybit.check_connection_and_balance()    
-    logger.info(f'My Balance + margin {mybalance['total_equity']} '
-                f' margin {mybalance['total_margin']}')
+    mybalance=clientBybit.check_connection_and_balance()  
+       
+    # Проверка на случай, если метод вернул None из-за ошибки подключения
+    if not mybalance:
+        logger.error("Не удалось получить баланс. Завершение работы.")
+        return    
     
+    logger.info(f'My Balance + margin {mybalance["total_equity"]} '
+                f' margin {mybalance["total_margin"]}')
+    
+    # Получаем список всех доступных монет для опционов
     allCoine=clientBybit.get_all_option_coins()
     logger.info(f'Выбери монету ищ списка для работы {allCoine}')
 
-    nameCoin = input("Введт ниенования монеты из списка уазаных выше :")
+    # ВЫЗОВ ЗАЩИЩЕННОГО ВВОДА (Вместо старого nameCoin = input())
+    nameCoin = analytics.get_valid_coin_input(all_coins=allCoine)
+    
+    # Получаем доступные даты экспирации для выбранной монеты
     allDatesExpiration=clientBybit.get_option_expiration_dates(base_coin=nameCoin)
     logger.info(f'Выберете из представленызх дату экспернации оптион '
                 f'{allDatesExpiration}')
+    
+    
 # =====================================================================
 # ТОЧКА ЗАПУСКА
 # =====================================================================
