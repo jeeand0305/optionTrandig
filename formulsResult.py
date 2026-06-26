@@ -3,11 +3,10 @@ from scipy.stats import norm
 from logger import logger
 import time
 from functools import wraps
-import math
-import time
 from functools import wraps
 from setuptools import setup
 from Cython.Build import cythonize
+from datetime import datetime, timezone
 # import setup
 
 # setup(ext_modules=cythonize("bs_module.pyx"))
@@ -95,30 +94,40 @@ def calculate_black_scholes_fast3(S, K, r, sigma, T, option_type='C'):
     return premium
 
 
-# calculate_black_scholes_fast3(S=S_, K=K_, r=r_, T=T_, sigma=sigma_, option_type='C' )
-
-from datetime import datetime, timezone
-
-def calculate_time_to_expiry(expiry_str):
-    """
-    Принимает строку даты от CCXT (например, '2026-06-26T00:00:00.000Z')
-    И возвращает T (время в долях года) для формулы Блэка-Шоулза.
-    """
-    # Превращаем строку в объект даты с учетом часового пояса UTC
-    expiry_date = datetime.strptime(expiry_str, "%Y-%m-%dT%H:%M:%S.%f%z")
-    now = datetime.now(timezone.utc)
+@benchmark_timer
+def calculate_time_to_expiry(expiry_str=None):
+    dictData = {}
     
-    # Считаем разницу в секундах
+    # Задаем текущее время в UTC
+    now = datetime.now(timezone.utc)
+    dictData['nowDate'] = now
+    
+    # Проверка на пустой ввод
+    if expiry_str is None:
+        logger.info("expiry_str is None")
+        return 0.0
+
+    try:
+        # Парсим дату и принудительно устанавливаем ей таймзону UTC
+        expiry_date = datetime.strptime(expiry_str, "%y%m%d").replace(tzinfo=timezone.utc)
+        dictData['expiry_date'] = expiry_date
+    except ValueError as e:
+        logger.error(f"Неверный формат даты: {e}")
+        return 0.0
+        
+    # Считаем разницу
     time_delta = expiry_date - now
     seconds_left = time_delta.total_seconds()
     
     if seconds_left <= 0:
         return 0.0
         
-    # В одном годе ровно 31,536,000 секунд
+    # Количество секунд в году (365 дней)
     seconds_in_year = 365 * 24 * 60 * 60
+    dictData['division'] = seconds_left / seconds_in_year
     
-    return seconds_left / seconds_in_year
+    # logger.info(f'dictData: {dictData}')
+    return dictData
 
-logger.info(f'timeToExpir  {calculate_time_to_expiry(
-    expiry_str='2026-08-30T08:00:00.000Z')}')
+# Исправлен синтаксис кавычек во внешней f-строке
+logger.info(f"timeToExpir {calculate_time_to_expiry(expiry_str='260830')}")
