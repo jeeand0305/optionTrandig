@@ -200,55 +200,96 @@ class BybitOptionBot:
             logger.error(f"Ошибка при парсинге дат экспирации для {base_coin}: {e}")
             return []
 
+    def get_ticker_by_symbol(self, symbol='BTC'):
+        symbol = symbol.upper() + 'USDT'
+        """Максимально упрощенный метод. Передаем только готовый символ."""
+        try:
+            ticker = self.exchange.fetch_ticker(symbol)
+            logger.info(f"{symbol} | Bid: {ticker.get('bid')} | Ask: {ticker.get('ask')}")
+            ticker = ticker.get('bid')# + ticker.get('ask'))/2
+            return ticker
+        except Exception as e:
+            logger.error(f"Ошибка получения цены для {symbol}: {e}")
+            return None
 
+    
     def get_option_strikes(self, base_coin="BTC", expiration_date="2026-07-03"):
         """
-        Парсит и возвращает уникальные цены страйков для монеты на 
-        конкретную дату экспирации.
-        :param base_coin: Например, 'BTC' или 'ETH'
-        :param expiration_date: Строка в формате 'YYYY-MM-DD' 
-        (из метода get_option_expiration_dates)
+        Парсит и возвращает словарь со страйками:
+        CALL — 4 ближайших страйка по возрастанию от текущей цены.
+        PUT — 4 ближайших страйка по убыванию от текущей цены.
         """
+        listCall = []
+        listPut = []
+        dateStrike = {}
+        
+        # Получаем текущую цену базового актива
+        ticPrice = self.get_ticker_by_symbol(symbol=base_coin)
+        
+        # if isinstance(ticker_data, dict):
+        #     ticPrice = float(ticker_data.get('last') or ticker_data.get('markPrice') or 0.0)
+        # else:
+        #     ticPrice = float(ticker_data)
+            
+        dateStrike['ticPrice'] = ticPrice
+
         try:
-            # Загружаем рынки (используется кэш CCXT)
             markets = self.exchange.load_markets()
             
-            strikes = set()
-            for market in markets.values():
-                # Фильтруем: тип опцион + нужная монета
+            for symbol, market in markets.items():
                 if market.get('type') == 'option' and market.get('base') == base_coin:
-                    # Извлекаем дату экспирации из контракта
                     expiry_date = market.get('expiryDatetime')
+                    
                     if expiry_date and expiry_date.startswith(expiration_date):
-                        # Забираем цену страйка (CCXT парсит её во float или int в поле 'strike')
-                        strike_price = market.get('info', {}).get('strikePrice')
-                        if strike_price:
-                            # Сохраняем как float для правильной сортировки чисел
-                            strikes.add(float(strike_price))
+                        strike = market.get('strike')
+                        if strike is None:
+                            continue
+                        
+                        strike = float(strike)
+                        opt_type = market.get('optionType') or ('call' if symbol.endswith('-C') else 'put')
+                        opt_type = opt_type.lower()
+
+                        # 1. CALL: страйки выше текущей цены
+                        if ticPrice < strike and opt_type == 'call':
+                            if strike not in listCall:
+                                listCall.append(strike)
+                            
+                        # 2. PUT: страйки ниже текущей цены
+                        elif ticPrice > strike and opt_type == 'put':
+                            if strike not in listPut:
+                                listPut.append(strike)
+
+            # =================================================================
+            # СТРОГАЯ СОРТИРОВКА И ОГРАНИЧЕНИЕ ДО 4 СТРАЙКОВ
+            # =================================================================
             
-            # Сортируем страйки по возрастанию
-            sorted_strikes = sorted(list(strikes))
+            # Сортируем CALL по возрастанию (от меньшего к большему) и берем первые 4
+            dateStrike['strikeCall'] = sorted(listCall)[:4]
             
-            # Переводим в красивый строковый вид для лога (убираем лишние .0 у целых чисел)
-            strikes_str = ", ".join([str(int(s) if s.is_integer() else s) for s in sorted_strikes])
+            # Сортируем PUT по убыванию (от большего к меньшему) и берем первые 4
+            dateStrike['strikePut'] = sorted(listPut, reverse=True)[:4]
             
-            logger.info(f"{base_coin} strikes for {expiration_date}: {strikes_str}")
-            return sorted_strikes
+            # Чистый итоговый лог
+            logger.debug(f"Сетка (4 страйка) для {base_coin} на {expiration_date}: {dateStrike}")
+            
+            return dateStrike
             
         except Exception as e:
             logger.error(f"Ошибка при парсинге страйков для {base_coin} на {expiration_date}: {e}")
-            return []
+            return {}
 
         
-bybitOpt = BybitOptionBot()
+# bybitOpt = BybitOptionBot()
 
 # getD = bybitOpt.get_historical_closes_candals("DOGE")
 # getD = bybitOpt.fetch_option_market_data('BTC')
 # getD = bybitOpt.check_connection_and_balance()
 # getD = bybitOpt.get_all_option_coins()
 # getD = bybitOpt.get_option_expiration_dates()
-getD = bybitOpt.get_option_strikes()#base_coin="SOL",
+# getD = bybitOpt.get_ticker_by_symbol('sol')
+# getD = bybitOpt.get_option_strikes()#base_coin="SOL",
                                   # expiration_date='2026-06-27')
 
-logger.info(f"{getD}")
+
+# logger.info(f"{getD}")
 

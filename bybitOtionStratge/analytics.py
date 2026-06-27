@@ -241,7 +241,6 @@ def get_valid_date_input(allDateExpiration=dict):
                 return None
             
             if int(date_expirition):
-                logger.info(f"Вы ввели не целое число")
                 date_expirition = int(date_expirition)
                 # Проверяем, есть ли введенная монета в списке доступных на Bybit
                 if date_expirition in allDateExpiration:
@@ -258,6 +257,30 @@ def get_valid_date_input(allDateExpiration=dict):
             logger.error(f"Непредвиденная ошибка при вводе: {e}")
             
 
+def parse_option_ticker(ticker: str) -> dict:
+    # Регулярное выражение для поиска: Базовый_актив - Дата - Страйк - Тип
+    # Поддерживает форматы 'SOL/USDT:USDT-260621-74-C' и 'SOL-260621-74-C'
+    pattern = r"([^:-]+)(?:/[^:-]+:[^:-]+)?-(\d{6})-(\d+(?:\.\d+)?)-([CPcp])"
+    match = re.match(pattern, ticker)
+    if not match:
+        raise ValueError(f"Неверный формат тикера опциона: {ticker}")
+    base_asset = match.group(1)  # Например: SOL
+    date_str = match.group(2)  # Например: 260621 (ГГММДД)
+    strike = float(match.group(3))  # Например: 74.0
+    option_type_letter = match.group(4).upper()  # Например: C
+    # Преобразуем строку '260621' (YYMMDD) в полноценную дату
+    expiration_date = datetime.strptime(date_str, "%y%m%d").date()
+    # Маппинг типа опциона
+    option_type = "Call" if option_type_letter == "C" else "Put"
+    return {
+        "ticker": ticker,
+        "base_asset": base_asset,
+        "expiration_date": expiration_date,  # Объект datetime.date
+        "expiration_str": expiration_date.strftime("%y%m%d"),
+        "strike": strike,
+        "type": option_type,
+    }
+  
   
 # test work coda   
 # _______________________________________________________

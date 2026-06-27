@@ -41,8 +41,9 @@ def main():
         allDateExpiration=allDatesExpiration)
     logger.info(f" {dateExpertion}")
     
-    
-    
+    ticCallPutStrikePrice=clientBybit.get_option_strikes(
+        base_coin=nameCoin, expiration_date=dateExpertion) 
+    logger.info(f" ticCallPutStrikePrice {ticCallPutStrikePrice} ")
 # =====================================================================
 # ТОЧКА ЗАПУСКА
 # =====================================================================
