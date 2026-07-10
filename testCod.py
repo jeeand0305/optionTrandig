@@ -263,13 +263,18 @@ def parse_option_ticker(ticker: str) -> dict:
 # print(parsed_dict)
 
 
+
+datePremiOption={'ticPrice': 64037.8, 'strikeCall': [{1: [64500.0, 337.2674277589067]}, {2: [65000.0, 188.83543651414584]}, {3: [65500.0, 96.8167915415379]}, {4: [66000.0, 45.25932589810873]}], 'strikePut': [{1: [64000.0, 511.58644054009346]}, {2: [63500.0, 302.85820732749926]}, {3: [63000.0, 162.9691942745667]}, {4: [62500.0, 78.89558092515563]}]}
+
 # ==============================================================================
 # ТОЧКА ВХОДА ДЛЯ ТЕСТИРОВАНИЯ ФУНКЦИИ
 # ==============================================================================
 
 if __name__ == "__main__":
+    
+    logger.info(f"{datePremiOption['strikeCall'][0][1][0]}")
 
-    bybitOption = BybitOptionBot()
+    # bybitOption = BybitOptionBot()
     
     # ТЕСТ: Передаем символ в ОФИЦИАЛЬНОМ формате Bybit v5 (БЕЗ слова USDT в названии)
     # logger.info(f"Результат функции: {bybitOption.volotility4('SOL/USDT-21JUN26-0.09-C')}")
@@ -281,7 +286,7 @@ if __name__ == "__main__":
     # logger.info(f'get_CCXT_btc {bybitOption.get_bybit_options_data()}')
     
     # test ticker price ccxt
-    logger.info(f'tickers request {bybitOption.tickerOnline('SOL/USDT')}')
+    # logger.info(f'tickers request {bybitOption.tickerOnline('SOL/USDT')}')
     
     
     """

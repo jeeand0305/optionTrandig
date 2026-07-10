@@ -39,7 +39,53 @@ def benchmark_timer(func):
     return wrapper
 
 
-def calculate_black_scholes_fast3(S, K, r, sigma, T, option_type='C'):
+def calculate_time_to_expiration(expiration_date='2026-07-17') -> float:
+    """
+    Рассчитывает параметр T (время до экспирации в долях года)
+    для формулы Блэка-Шоулза.
+    Учитывает, что экспирация на Bybit происходит строго в 08:00 UTC.
+    
+    :param expiration_date: Строка даты в формате 'YYYY-MM-DD'
+    (например, '2026-07-17')
+    :return: float (доля года, например, 0.0191). 
+    Если опцион истек, возвращает 0.0
+    """
+    try:
+        # 1. Задаем точное время экспирации на Bybit (08:00:00 UTC)
+        # Добавляем хвост времени к строке даты пользователя
+        expiry_str = f"{expiration_date} 08:00:00"
+        
+        # Переводим в объект datetime (работаем строго в UTC)
+        expiry_dt = datetime.strptime(expiry_str, "%Y-%m-%d %H:%M:%S")
+        
+        # 2. Получаем текущее точное время в UTC
+        # Внимание: для точности Блэка-Шоулза важно использовать UTC время, а не локальное на ПК
+        current_dt = datetime.utcnow()
+        
+        # 3. Находим чистую разницу во времени
+        time_delta = expiry_dt - current_dt
+        
+        # Переводим разницу в дни (включая остаток в часах, минутах и секундах через total_seconds)
+        days_remaining = time_delta.total_seconds() / 86400.0
+        
+        # Если опцион уже экспирировался (время в прошлом), возвращаем 0
+        if days_remaining <= 0:
+            logger.warning(f"Опцион на дату {expiration_date} уже экспирирован.")
+            return 0.0
+        
+        # 4. Рассчитываем долю года (дней / 365.25)
+        # Использование 365.25 учитывает високосные года, что принято в финансах
+        T = days_remaining / 365.25
+        
+        logger.info(f"До экспирации {expiration_date} осталось: {days_remaining:.2f} дней (T = {T:.4f} долей года)")
+        return T
+        
+    except Exception as e:
+        logger.error(f"Ошибка при расчете параметра T для даты {expiration_date}: {e}")
+        return 0.0
+
+
+def calculate_black_scholes_fast3(S, K, sigma, T, option_type='C', r=0.0):
     """
     Универсальный расчет теоретической стоимости опционов Call и Put.
      S     : Текущая цена актива (underlyingPrice) -func
@@ -126,6 +172,8 @@ def calculateVolatilityFromPrices(prices: list,
         'BTC': 0.50,   # 50% годовых
         'ETH': 0.60,   # 60% годовых
         'SOL': 0.75,   # 75% годовых
+        'MNT': 0.77,
+        'XRP': 0.77,
         'DOGE': 0.85   # 85% годовых
     }
     
@@ -177,8 +225,8 @@ def calculateVolatilityFromPrices(prices: list,
                            f'дефолт {fallback_value}')
             return fallback_value
         
-        logger.info(f"Рассчитана волатильность для"
-                    f"{base_coin} за {window} дней:"
+        logger.info(f"Рассчитана волатильность для "
+                    f"{base_coin} за {window} дней: "
                     f"{round(sigma, 4)}")
         return round(sigma, 4)
     
@@ -186,8 +234,8 @@ def calculateVolatilityFromPrices(prices: list,
           # Если произошла непредвиденная 
           # ошибка в расчетах — страхуем робота дефолt   
         logger.error(f"Рассчитана волатильность "
-                     f"для {base_coin} за {window}"
-                     f"дней: {round(sigma, 4)}")
+                     f"для  {base_coin} за {window}"
+                     f"дней:  {round(sigma, 4)}")
         return fallback_value
   
   
@@ -258,8 +306,10 @@ def get_valid_date_input(allDateExpiration=dict):
             
 
 def parse_option_ticker(ticker: str) -> dict:
-    # Регулярное выражение для поиска: Базовый_актив - Дата - Страйк - Тип
-    # Поддерживает форматы 'SOL/USDT:USDT-260621-74-C' и 'SOL-260621-74-C'
+    # Регулярное выражение для поиска: 
+    # Базовый_актив - Дата - Страйк - Тип
+    # Поддерживает форматы 'SOL/USDT:USDT-260621-74-C'
+    # и 'SOL-260621-74-C'
     pattern = r"([^:-]+)(?:/[^:-]+:[^:-]+)?-(\d{6})-(\d+(?:\.\d+)?)-([CPcp])"
     match = re.match(pattern, ticker)
     if not match:
@@ -281,19 +331,51 @@ def parse_option_ticker(ticker: str) -> dict:
         "type": option_type,
     }
   
+def format_date_to_bybit(date_str: str) -> str:
+    """
+    Конвертирует стандартную дату '2026-07-11' в формат Bybit '11JUL26'.
+    """
+    try:
+        # 1. Парсим входящую строку в объект даты
+        parsed_date = datetime.strptime(date_str, "%Y-%m-%d")
+        
+        # 2. Форматируем в нужный вид: 
+        # %d - день (11), %b - короткое имя месяца (JUL), %y - две цифры года (26)
+        bybit_date = parsed_date.strftime("%d%b%y")
+        
+        # 3. Принудительно делаем буквы заглавными (Bybit API v5 требует только капс)
+        return bybit_date.upper()
+        
+    except Exception as e:
+        print(f"Ошибка конвертации даты {date_str}: {e}")
+        return ""
+
+
+def allSymbolBybitOption(dataTicPrice:dict, nameOptin):
+    """
+    собираем симбол для байбит
+    """
+    logger.info(f"{nameOptin}")
+    if 'strikeCall' in dataTicPrice:
+        
+        nameOptin=nameOptin+'-'+str(dataTicPrice['strikeCall'][0][1][0])
+        return nameOptin + '-' + 'C'
   
 # test work coda   
 # _______________________________________________________
 # from bybit_client import BybitOptionBot
-# listP = [85.23, 85.37, 84.31, 86.16, 87.34, 82.44, 81.27, 74.23, 71.62, 68.87, 63.63, 62.2, 66.5, 66.82, 64.98, 63.19,66.92, 66.82, 68.92, 71.27, 73.98, 75.01]
-# bybitCandals=BybitOptionBot().get_historical_closes(
-#     base_coin='DOGE'
-# )
-# logger.info(f'listP {type(listP[0])}')
-# logger.info(f'bybitCandals {type(bybitCandals[0])}')
+# base_coin1='MNT'
+# # listP = [85.23, 85.37, 84.31, 86.16, 87.34, 82.44, 81.27, 74.23, 71.62, 68.87, 63.63, 62.2, 66.5, 66.82, 64.98, 63.19,66.92, 66.82, 68.92, 71.27, 73.98, 75.01]
+# bybitCandals=BybitOptionBot().get_historical_closes_candals(
+#     base_coin=base_coin1)
+
+# logger.info(f' candals {bybitCandals}')
+
+# # logger.info(f'listP {type(listP[0])}')
+# # logger.info(f'bybitCandals {type(bybitCandals[0])}')
 # volatilityPrice = calculateVolatilityFromPrices(
 #     prices=bybitCandals,
-#     base_coin='DOGE-20JUN26-0.009-C', 
+#     base_coin=base_coin1,#-20JUL26-0.009-C', 
 # )    
 # logger.info(f'calculateVolatilityFromPrices'
 #             f'{volatilityPrice}')

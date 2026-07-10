@@ -65,7 +65,7 @@ def setup_logger(name="RatioBot"):
     )
     
     # Указываем имя файла и кодировку utf-8, чтобы русский текст не ломался
-    file_handler = logging.FileHandler("bot.log", encoding="utf-8")
+    file_handler = logging.FileHandler("bot.log", mode='w', encoding="utf-8")
     file_handler.setFormatter(file_formatter)
     file_handler.setLevel(logging.INFO)
 
