@@ -391,9 +391,11 @@ class BybitOptionBot:
                 
             return all_tickers
 
+
         except Exception as e:
             logger.error(f"Ошибка при получении стоимостей премий: {e}")
             return {}
+        
         
     def place_option_order(self, symbol: str, side: str, qty: float, price: float) -> dict:
         """
@@ -440,18 +442,221 @@ class BybitOptionBot:
             return None
 
 
+    def place_option_order2(self, symbol: str, side: str,
+                            qty: float, price: float) -> dict:
+        """
+        Выставляет лимитный ордер на покупку или продажу опциона.
+        Использует исключительно универсальные стандарты CCXT для кроссплатформенности.
+        
+        ВХОДНЫЕ ДАННЫЕ (INPUT DATA):
+        ----------------------------
+        :param symbol: Биржевая маркировка контракта. Принимает чистый ID от Bybit 
+                       в формате строки. Пример: "BTC-14JUL26-63000-C" (без точек в страйке).
+        :param side:   Сторона сделки. Строка: 'buy' (покупка опциона / лонг волатильности) 
+                       или 'sell' (продажа опциона / шорт волатильности / сбор премии).
+        :param qty:    Объем ордера в количестве контрактов/монет (тип float или int). 
+                       Пример: 0.01 для Биткоина или 1000.0 для DOGE.
+        :param price:  Лимитная цена ордера (тип float). Это расчетная стоимость премии опциона, 
+                       полученная из Блэка-Шоулза. Пример: 150.9 (а не цена самого спота BTC).
+                       
+        :return:       Словарь с ответом от биржи и параметрами ордера или None при ошибке.
+        """
+        try:
+            # --- ШАГ 1: АВТОМАТИЧЕСКАЯ КОНВЕРТАЦИЯ СИМВОЛА В СТАНДАРТ CCXT ---
+            # Принудительно переводим строку в верхний регистр (Caps Lock) и делим по дефисам
+            # Из строки "BTC-14JUL26-63000-C" получаем список: ['BTC', '14JUL26', '63000', 'C']
+            parts = symbol.upper().split('-')
+            
+            if len(parts) == 4:
+                base_coin, date_str, strike, option_type = parts
+                
+                # Конвертируем текстовую дату из формата Bybit "14JUL26" в объект даты Python
+                parsed_date = datetime.strptime(date_str, "%d%b%y")
+                # Переводим дату в цифровой формат CCXT "260714" (ГодМесяцДень)
+                ccxt_date = parsed_date.strftime("%y%m%d")
+                
+                # Собираем официальный кроссплатформенный символ CCXT, который поймет любая биржа.
+                # Результат сборки: "BTC/USDT:USDT-260714-63000-C"
+                ccxt_symbol = f"{base_coin}/USDT:USDT-{ccxt_date}-{strike}-{option_type}"
+            else:
+                # Если символ уже изначально пришел в правильном формате CCXT
+                ccxt_symbol = symbol
+
+            safe_price = float(self.exchange.price_to_precision(ccxt_symbol, price))
+            # Логируем промежуточные данные для отладки в консоли
+            logger.info(f"Входной биржевой символ: {symbol} -> Сконвертирован в CCXT: {ccxt_symbol}")
+            logger.info(f"Параметры ордера: {side.upper()} {qty} контрактов по лимитной цене {price}")
+            
+            # --- ШАГ 2: ОТПРАВКА УНИФИЦИРОВАННОГО ОРДЕРА ЧЕРЕЗ CCXT ---
+            # Этот метод одинаков для ВСЕХ бирж в библиотеке CCXT
+            response = self.exchange.create_order(
+                symbol=ccxt_symbol,         # Передаем наш собранный универсальный символ
+                type='limit',               # Опционы на криптобиржах торгуются только лимитными ордерами
+                side=side.lower(),          # Приводим сторону строго к маленьким буквами ('buy' или 'sell')
+                amount=qty,                 # Объем контракта
+                price=safe_price,                # Цена премии
+                params={
+                    'category': 'option',   # Специфичный маркер Bybit v5 API (другие биржи его проигнорируют)
+                    'timeInForce': 'GTC'    # Ордер «Good 'Til Cancelled» — висит в стакане, пока не исполнится или не отменится
+                }
+            )
+            
+            # Извлекаем уникальный ID созданного ордера из ответа CCXT
+            order_id = response.get('id')
+            logger.info(f"Ордер успешно размещен на бирже! Присвоен ID ордера: {order_id}")
+            return response
+
+        except Exception as e:
+            # Ловим любые сетевые ошибки, нехватку маржи или неверные параметры, не останавливая бота
+            logger.error(f"Критическая ошибка CCXT при выставлении ордера на {symbol}: {e}")
+            return None
+        
+        
+# =================================================
+# функция котороя открывает стратегию "бетман" и 
+# перебирает премии чтоб улучшить вход
+# =================================================
+
+
+    def chase_order(self, symbol: str, side: str, qty: float, price_limit: float, check_interval_sec: int = 5) -> bool:
+        """
+        Универсальный алгоритм преследования цены (Chase) для неликвидных опционов.
+        
+        :param symbol: Код опциона в формате CCXT (например, "SOL-14JUL26-77-C")
+        :param side: 'buy' (для Long ног) или 'sell' (для Short ног)
+        :param qty: Количество контрактов
+        :param price_limit: Максимальная цена для buy (не переплачивать) или минимальная цена для sell (не отдавать дешево)
+        :param check_interval_sec: Пауза между проверками стакана
+        :return: True если полностью исполнен, False если отменен по лимиту цены
+        """
+        side = side.lower()
+        logger.info(f"Запуск Chase Order [{side.upper()}] для {symbol}. Объем: {qty}. Лимит цены: {price_limit}")
+
+        # 1. Запрашиваем первый стакан и определяем стартовую цену
+        try:
+            orderbook = self.exchange.fetch_order_book(symbol)
+        except Exception as e:
+            logger.error(f"Не удалось получить стакан для {symbol}: {e}")
+            return False
+
+        if side == 'buy':
+            best_bid = orderbook['bids'][0][0] if len(orderbook['bids']) > 0 else 0.0
+            current_target_price = round(best_bid + 0.01, 4)
+            if current_target_price > price_limit:
+                logger.warning(f"Стартовый Bid+0.01 ({current_target_price}) выше лимита покупок ({price_limit}). Отмена.")
+                return False
+        else:  # sell
+            best_ask = orderbook['asks'][0][0] if len(orderbook['asks']) > 0 else 999999.0
+            current_target_price = round(best_ask - 0.01, 4)
+            if current_target_price < price_limit:
+                logger.warning(f"Стартовый Ask-0.01 ({current_target_price}) ниже лимита продаж ({price_limit}). Отмена.")
+                return False
+
+        # 2. Выставляем первоначальный ордер
+        try:
+            current_order = self.exchange.create_order(
+                symbol=symbol, type='limit', side=side, amount=qty, price=current_target_price
+            )
+            order_id = current_order['id']
+            logger.info(f"Размещен первый лимит [{side.upper()}]: {current_target_price} USDT (ID: {order_id})")
+        except Exception as e:
+            logger.error(f"Ошибка создания стартового ордера: {e}")
+            return False
+
+        # 3. Основной цикл отслеживания (Chase Loop)
+        while True:
+            time.sleep(check_interval_sec)
+
+            # Проверяем статус ордера на бирже
+            try:
+                order_info = self.exchange.fetch_order(order_id, symbol)
+                status = order_info['status']
+            except Exception as e:
+                logger.warning(f"Ошибка запроса статуса ордера {order_id}: {e}. Пробуем снова...")
+                continue
+
+            if status == 'closed':
+                logger.info(f"🎉 Нога {symbol} [{side.upper()}] ПОЛНОСТЬЮ ИСПОЛНЕНА по цене {current_target_price}!")
+                return True
+
+            if status == 'canceled':
+                logger.warning(f"Ордер {order_id} был отменен системой/вручную.")
+                return False
+
+            # Если ордер всё еще открыт ('open'), обновляем стакан
+            try:
+                orderbook = self.exchange.fetch_order_book(symbol)
+            except Exception as e:
+                logger.warning(f"Не удалось обновить стакан в цикле: {e}")
+                continue
+
+            # Считаем новую справедливую цену шага в зависимости от стороны
+            if side == 'buy':
+                new_bid = orderbook['bids'][0][0] if len(orderbook['bids']) > 0 else 0.0
+                new_target_price = round(new_bid + 0.01, 4)
+                
+                # Если рынок уходит вверх — нужно двигать лимитку выше
+                if new_target_price > current_target_price:
+                    if new_target_price > price_limit:
+                        logger.warning(f"Рынок ушел до {new_target_price} (выше лимита {price_limit}). Снимаем ордер.")
+                        self._safe_cancel(order_id, symbol)
+                        return False
+                    order_id = self._replace_order(order_id, symbol, side, qty, new_target_price)
+                    current_target_price = new_target_price
+
+            else:  # sell
+                new_ask = orderbook['asks'][0][0] if len(orderbook['asks']) > 0 else 999999.0
+                new_target_price = round(new_ask - 0.01, 4)
+                
+                # Если продавцы опускают цену — нам нужно двигать лимитку ниже, чтобы продать
+                if new_target_price < current_target_price:
+                    if new_target_price < price_limit:
+                        logger.warning(f"Рынок упал до {new_target_price} (ниже лимита {price_limit}). Снимаем ордер.")
+                        self._safe_cancel(order_id, symbol)
+                        return False
+                    order_id = self._replace_order(order_id, symbol, side, qty, new_target_price)
+                    current_target_price = new_target_price
+
+    def _replace_order(self, old_id: str, symbol: str, side: str, qty: float, new_price: float) -> str:
+        """Внутренний метод перевыставления ордера через Cancel + Create"""
+        self._safe_cancel(old_id, symbol)
+        try:
+            new_order = self.exchange.create_order(
+                symbol=symbol, type='limit', side=side, amount=qty, price=new_price
+            )
+            logger.info(f"Лимит сдвинут до: {new_price} USDT (Новый ID: {new_order['id']})")
+            return new_order['id']
+        except Exception as e:
+            logger.error(f"Критическая ошибка при перевыставлении ордера: {e}")
+            # Возвращаем старый ID, чтобы цикл попытался обработать его или завершиться
+            return old_id
+
+    def _safe_cancel(self, order_id: str, symbol: str):
+        """Внутренний безопасный метод отмены ордера"""
+        try:
+            self.exchange.cancel_order(order_id, symbol)
+        except Exception:
+            # Игнорируем ошибку, если ордер исполнился прямо в момент отмены
+            pass
+
+
+
         
 # bybitOpt = BybitOptionBot()
 
-# getD = bybitOpt.get_historical_closes_candals("DOGE")
-# getD = bybitOpt.fetch_option_market_data('BTC')
-# getD = bybitOpt.check_connection_and_balance()
-# getD = bybitOpt.get_all_option_coins()
-# getD = bybitOpt.get_option_expiration_dates()
-# getD = bybitOpt.get_ticker_by_symbol('sol')
-# getD = bybitOpt.get_option_strikes(base_coin="BTC", expiration_date='2026-07-10')
-# getD = bybitOpt.get_option_premium_prices2(strikes_grid={'ticPrice': 63042.5, 'strikeCall': [63500.0, 64000.0, 64500.0, 65000.0], 'strikePut': [63000.0, 62500.0, 62000.0, 61500.0]})
-
+# # # getD = bybitOpt.get_historical_closes_candals("DOGE")
+# # # getD = bybitOpt.fetch_option_market_data('BTC')
+# # # getD = bybitOpt.check_connection_and_balance()
+# # # getD = bybitOpt.get_all_option_coins()
+# # # getD = bybitOpt.get_option_expiration_dates()
+# # # getD = bybitOpt.get_ticker_by_symbol('sol')
+# # # getD = bybitOpt.get_option_strikes(base_coin="BTC", expiration_date='2026-07-10')
+# # # getD = bybitOpt.get_option_premium_prices2(strikes_grid={'ticPrice': 63042.5, 'strikeCall': [63500.0, 64000.0, 64500.0, 65000.0], 'strikePut': [63000.0, 62500.0, 62000.0, 61500.0]})
+# getD = bybitOpt.place_option_order2(
+#     symbol='SOL-15JUL26-77-C',
+#     side='Sell',
+#     qty=1.0,
+#     price=0.24)
 
 
 # logger.info(f"{getD}")

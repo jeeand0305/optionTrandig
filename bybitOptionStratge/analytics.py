@@ -130,7 +130,7 @@ def calculate_black_scholes_fast3(S, K, sigma, T, option_type='C', r=0.0):
     else:
         premium = K * math.exp(-r * T) * (1.0 - cdf_d2) - S * (1.0 - cdf_d1)
     
-    logger.info(f'premoium3 {premium}' )
+    logger.debug(f'premoium3 {premium}' )
     return premium
 
 
@@ -282,17 +282,19 @@ def get_valid_date_input(allDateExpiration=dict):
         try:
             # Запрашиваем ввод, очищаем от пробелов и переводим в верхний регистр
             date_expirition = input(f"Выбери дату экспирации и введите номер указанных"
-                              f"в словоре (или 'EXIT' для выхода): ")
+                              f"в словоре (или 'EXIT' для выхода): ").strip()
             
-            if date_expirition == 'EXIT' or 'exit' == date_expirition:
+            if date_expirition.upper() == 'EXIT':
                 logger.info("Выход из программы по требованию пользователя.")
                 return None
             
-            if int(date_expirition):
-                date_expirition = int(date_expirition)
-                # Проверяем, есть ли введенная монета в списке доступных на Bybit
-                if date_expirition in allDateExpiration:
-                    return allDateExpiration[date_expirition]
+            # Переводим строковый ввод пользователя в целое число (int)
+            chosen_key = int(date_expirition)
+            
+            # ИСПРАВЛЕНО: Прямо проверяем, есть ли этот числовой ключ в словаре
+            # Теперь ключ 0 обрабатывается идеально
+            if chosen_key in allDateExpiration:
+                return allDateExpiration[chosen_key]
             else:
                 # Если нет в словоре, принудительно вызываем исключение (ValueError)
                    raise ValueError(f"Нет такого ключа '{date_expirition}' в Bybit!")
@@ -328,8 +330,8 @@ def parse_option_ticker(ticker: str) -> dict:
         "expiration_date": expiration_date,  # Объект datetime.date
         "expiration_str": expiration_date.strftime("%y%m%d"),
         "strike": strike,
-        "type": option_type,
-    }
+        "type": option_type, }
+    
   
 def format_date_to_bybit(date_str: str) -> str:
     """
@@ -351,94 +353,93 @@ def format_date_to_bybit(date_str: str) -> str:
         return ""
 
 
-def allSymbolBybitOption(dataTicPrice:dict, nameOptin):
+def allSymbolBybitOption(dataTicPrice:dict,
+                         nameOptin=str,):
     """
     собираем симбол для байбит
+
     """
-    logger.info(f"{nameOptin}")
-    if 'strikeCall' in dataTicPrice:
-        
-        nameOptin=nameOptin+'-'+str(dataTicPrice['strikeCall'][0][1][0])
-        return nameOptin + '-' + 'C'
-  
-# test work coda   
-# _______________________________________________________
-# from bybit_client import BybitOptionBot
-# base_coin1='MNT'
-# # listP = [85.23, 85.37, 84.31, 86.16, 87.34, 82.44, 81.27, 74.23, 71.62, 68.87, 63.63, 62.2, 66.5, 66.82, 64.98, 63.19,66.92, 66.82, 68.92, 71.27, 73.98, 75.01]
-# bybitCandals=BybitOptionBot().get_historical_closes_candals(
-#     base_coin=base_coin1)
 
-# logger.info(f' candals {bybitCandals}')
+    while True:
+        try:
+            # Запрашиваем ввод, очищаем от пробелов и переводим в верхний регистр
+            callAndPut = input(f"Введи Put или Call опцион"
+                                    f"(или 'EXIT' для выхода): ").upper()
+            
+            if callAndPut == 'EXIT':
+                logger.info("Выход из программы по требованию пользователя.")
+                return None
+            
+            if callAndPut == 'CALL':
+                nameOptin=nameOptin+'-'+str(dataTicPrice['strikeCall'][0][1][0])
+                return nameOptin + '-' + 'C'
+            
+            elif callAndPut == 'PUT':
+                nameOptin=nameOptin+'-'+str(dataTicPrice['strikePut'][0][1][0])
+                return nameOptin + '-' + 'P'
+                
+        except ValueError as err:
+            # Перехватываем нашу ошибку ввода и показываем пользователю, не роняя скрипт
+            logger.warning(f"Ошибка ввода: {err} Пожалуйста, попробуйте еще раз.")
+        except Exception as e:
+            # Перехватываем любые критические непредвиденные ошибки (например, Ctrl+C)
+            logger.error(f"Непредвиденная ошибка при вводе: {e}")
+            
+       
+def generate_option_grid_premiums(
+        ticCallPutStrikePrice: dict, 
+        nameFullOption: str, 
+        sigma_: float, 
+        calculatorT: float) -> dict:
+    
+    """
+    [ФУНКЦИЯ ДЛЯ АНАЛИТИКИ] 
+    Пробегает по всей сетке страйков, рассчитывает 
+    премии для Call и Put,
+    и динамически привязывает к ним готовый для биржи 
+    текстовый символ контракта.
+    """
+    spot_price = ticCallPutStrikePrice.get('ticPrice', 0.0)
+    calculated_calls = []
+    calculated_puts = []
 
-# # logger.info(f'listP {type(listP[0])}')
-# # logger.info(f'bybitCandals {type(bybitCandals[0])}')
-# volatilityPrice = calculateVolatilityFromPrices(
-#     prices=bybitCandals,
-#     base_coin=base_coin1,#-20JUL26-0.009-C', 
-# )    
-# logger.info(f'calculateVolatilityFromPrices'
-#             f'{volatilityPrice}')
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-        
+    # 1. Расчет для CALL опционов
+    if 'strikeCall' in ticCallPutStrikePrice:
+        for strike in ticCallPutStrikePrice['strikeCall']:
+            premia_call = calculate_black_scholes_fast3(
+                S=spot_price, 
+                K=strike, 
+                sigma=sigma_, 
+                r=0.02, 
+                T=calculatorT, 
+                option_type='call'
+            )
+            clean_strike = f"{float(strike):g}"
+            trade_symbol = f"{nameFullOption}-{clean_strike}-C"
+            
+            calculated_calls.append({
+                'strike': float(clean_strike),
+                'premium': premia_call,
+                'symbol': trade_symbol
+            })
+
+    # 2. Расчет для PUT опционов
+    if 'strikePut' in ticCallPutStrikePrice:
+        for strike in ticCallPutStrikePrice['strikePut']:
+            premia_put = calculate_black_scholes_fast3(
+                S=spot_price, K=strike, sigma=sigma_, r=0.02, T=calculatorT, option_type='put'
+            )
+            clean_strike = f"{float(strike):g}"
+            trade_symbol = f"{nameFullOption}-{clean_strike}-P"
+            
+            calculated_puts.append({
+                'strike': float(clean_strike),
+                'premium': premia_put,
+                'symbol': trade_symbol
+            })
+
+    return {
+        'ticPrice': spot_price,
+        'calls_grid': calculated_calls,
+        'puts_grid': calculated_puts
+    }
