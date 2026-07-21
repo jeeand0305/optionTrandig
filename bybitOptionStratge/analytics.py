@@ -134,7 +134,7 @@ def calculate_black_scholes_fast3(S, K, sigma, T, option_type='C', r=0.0):
     return premium
 
 
-def parseBaseCoin(contractSymbol: str):
+def parserSymbolPybit(contractSymbol: str):
     base_coin = ''
     """
     Динамически вырезает имя базового актива 
@@ -297,7 +297,7 @@ def get_valid_date_input(allDateExpiration=dict):
                 return allDateExpiration[chosen_key]
             else:
                 # Если нет в словоре, принудительно вызываем исключение (ValueError)
-                   raise ValueError(f"Нет такого ключа '{date_expirition}' в Bybit!")
+                raise ValueError(f"Нет такого ключа '{date_expirition}' в Bybit!")
                 
         except ValueError as err:
             # Перехватываем нашу ошибку ввода и показываем пользователю, не роняя скрипт
@@ -307,7 +307,7 @@ def get_valid_date_input(allDateExpiration=dict):
             logger.error(f"Непредвиденная ошибка при вводе: {e}")
             
 
-def parse_option_ticker(ticker: str) -> dict:
+def parserSymbolCcxt(ticker: str) -> dict:
     # Регулярное выражение для поиска: 
     # Базовый_актив - Дата - Страйк - Тип
     # Поддерживает форматы 'SOL/USDT:USDT-260621-74-C'
@@ -349,9 +349,67 @@ def format_date_to_bybit(date_str: str) -> str:
         return bybit_date.upper()
         
     except Exception as e:
-        print(f"Ошибка конвертации даты {date_str}: {e}")
+        logger.info(f"Ошибка конвертации даты {date_str}: {e}")
         return ""
 
+def selctionStrike(dataTicStrikePremiumSymbol=dict,
+                   callOrPut='CALL'):
+    """
+    просим выбрать страйк с указанымии премиями
+    от  до 3
+    """
+    while True:
+        try:
+            # Запрашиваем ввод, очищаем от пробелов и переводим в верхний регистр
+            numberStrike = input(f"Введи число от 0 до 3 "
+                                    f"(или 'EXIT' для выхода): ").upper()
+            # logger.info(f"{dataTicPrice} {callAndPut}")
+            if numberStrike == 'EXIT':
+                logger.info("Выход из программы по требованию пользователя.")
+                return None
+            
+            if callOrPut == 'CALL':
+                return dataTicStrikePremiumSymbol['calls_grid'][int(numberStrike)]
+
+            elif callOrPut == 'PUT':
+                return dataTicStrikePremiumSymbol['puts_grid'][int(numberStrike)]
+                
+        except ValueError as err:
+            # Перехватываем нашу ошибку ввода и показываем пользователю, не роняя скрипт
+            logger.warning(f"Ошибка ввода: {err} Пожалуйста, попробуйте еще раз.")
+        except Exception as e:
+            # Перехватываем любые критические непредвиденные ошибки (например, Ctrl+C)
+            logger.error(f"Непредвиденная ошибка при вводе: {e}")
+            
+def selctionBuySell(dataTicStrikePremiumSymbol=dict,
+                   buyOrSell='BUY'):
+    """
+    определяемся с продащей опционов или покупкой buy / sell
+    """
+    while True:
+        try:
+            # Запрашиваем ввод, очищаем от пробелов и переводим в верхний регистр
+            buySell = input(f"Введи если купить оцион BUY если продать SELL "
+                                    f"(или 'EXIT' для выхода): ").upper()
+            # logger.info(f"{dataTicPrice} {callAndPut}")
+            if buySell == 'EXIT':
+                logger.info("Выход из программы по требованию пользователя.")
+                return None
+            
+            if buySell == 'BUY':
+                dataTicStrikePremiumSymbol['buyOrSell'] = 'buy'
+                return dataTicStrikePremiumSymbol
+
+            elif buySell == 'SELL':
+                dataTicStrikePremiumSymbol['buyOrSell'] = 'sell'
+                return dataTicStrikePremiumSymbol
+                
+        except ValueError as err:
+            # Перехватываем нашу ошибку ввода и показываем пользователю, не роняя скрипт
+            logger.warning(f"Ошибка ввода: {err} Пожалуйста, попробуйте еще раз.")
+        except Exception as e:
+            # Перехватываем любые критические непредвиденные ошибки (например, Ctrl+C)
+            logger.error(f"Непредвиденная ошибка при вводе: {e}")
 
 def allSymbolBybitOption(dataTicPrice:dict,
                          nameOptin=str,):
@@ -361,22 +419,24 @@ def allSymbolBybitOption(dataTicPrice:dict,
     """
 
     while True:
+        count=0
         try:
             # Запрашиваем ввод, очищаем от пробелов и переводим в верхний регистр
             callAndPut = input(f"Введи Put или Call опцион"
                                     f"(или 'EXIT' для выхода): ").upper()
-            
+            # logger.info(f"{dataTicPrice} {callAndPut}")
             if callAndPut == 'EXIT':
                 logger.info("Выход из программы по требованию пользователя.")
                 return None
             
             if callAndPut == 'CALL':
-                nameOptin=nameOptin+'-'+str(dataTicPrice['strikeCall'][0][1][0])
-                return nameOptin + '-' + 'C'
-            
+                responce=selctionStrike(dataTicStrikePremiumSymbol=dataTicPrice,
+                               callOrPut=callAndPut)
+                return responce
             elif callAndPut == 'PUT':
-                nameOptin=nameOptin+'-'+str(dataTicPrice['strikePut'][0][1][0])
-                return nameOptin + '-' + 'P'
+                responce=selctionStrike(dataTicStrikePremiumSymbol=dataTicPrice,
+                               callOrPut=callAndPut)
+                return responce
                 
         except ValueError as err:
             # Перехватываем нашу ошибку ввода и показываем пользователю, не роняя скрипт

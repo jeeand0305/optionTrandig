@@ -15,11 +15,11 @@ def main():
     # V 1 Получения баланса
     # V 2. получаем список монет
     # V 3. отбираем монеты 
-    # V 4. получаем страки опционов (ДАТЫ)
+    # V 4. получаем и выбираем дату экспирации опционов (ДАТЫ)
     # V 5. виаулизация опционов выбраной экспирацию страйков, премий, симбол
-    # 6. выбираем колл или пут оционы
-    # 7. выбираем покупка или продажа опциона
-    # 8. открываем ордер
+    # V 6. выбираем колл или пут оционы
+    # V 7. выбираем покупка или продажа опциона
+    # V 8. открываем ордер
     # 9. проверям наличие продоных опционов
     # 10. сравниваем страк и тик прайс
     # 11. открываем хэдж фючом если опцион заходит в деньги
@@ -33,7 +33,7 @@ def main():
         
     # ========================================================================
     # 1 Получения баланса 
-    logger.info(f"1 Получения баланса ")
+    logger.warning(f"1 Получения баланса ")
     nameFullOption=''
     clientBybit=bybit_client.BybitOptionBot()
     mybalance=clientBybit.check_connection_and_balance()  
@@ -50,7 +50,7 @@ def main():
     
     # ==========================================================================
     # 2. получаем список монет
-    logger.info(f"2. получаем список монет")
+    logger.warning(f"2. получаем список монет")
     # Получаем список всех доступных монет для опционов
     allCoine=clientBybit.get_all_option_coins()
     logger.info(f'Выбери монету из списка для работы: {allCoine}')
@@ -58,7 +58,7 @@ def main():
 
     # ======================================================================
      # 3. отбираем монеты 
-    logger.info(f"3. отбираем монеты ")
+    logger.warning(f"3. отбираем монеты ")
     # ВЫЗОВ ЗАЩИЩЕННОГО ВВОДА монеты для торговли опциона )
     nameCoin = analytics.get_valid_coin_input(all_coins=allCoine)
     nameFullOption=nameCoin
@@ -66,14 +66,18 @@ def main():
     # Получаем доступные даты экспирации для выбранной монеты
     allDatesExpiration=clientBybit.get_option_expiration_dates(
         base_coin=nameCoin)
-    logger.info(f'Выберете из представленызх дату экспернации оптион '
-                f'{allDatesExpiration}')
     
     
     # ==================================================================
     # 4. получаем страки опционов (ДАТЫ)
     # ввести ключ даты экспирации
-    logger.info(f"4. получаем страки опционов (ДАТЫ)")
+    logger.warning(f"4. получаем дату экспирации опционов (ДАТЫ)")    
+    logger.debug(f'Выберете из представленызх дату экспернации оптион ')
+    for key, volme in  allDatesExpiration.items():
+        logger.info(f"ключь {key} эксперация {volme}")
+    # logger.info(f'Выберете из представленызх дату экспернации оптион '
+    #             f'{allDatesExpiration}')
+    
     dateExpertion=analytics.get_valid_date_input(
         allDateExpiration=allDatesExpiration)
     logger.info(f"Вы выбрали дату: {dateExpertion}")
@@ -82,12 +86,10 @@ def main():
     
     ticCallPutStrikePrice=clientBybit.get_option_strikes(
         base_coin=nameCoin, expiration_date=dateExpertion) 
-    logger.info(f" ticCallPutStrikePrice {ticCallPutStrikePrice} ")
+    logger.debug(f" ticCallPutStrikePrice {ticCallPutStrikePrice} ")
     
 
-    # ===================================================================
-    # 5. виаулизация опционов выбраной экспирацию страйков, премий, симбол 
-    logger.info(f"5. виаулизация опционов выбраной экспирацию страйков, премий, симбол")
+
     # Расчет волотильности
         # а. последние 30 свечей
     сandals30=clientBybit.get_historical_closes_candals(
@@ -98,82 +100,70 @@ def main():
         base_coin=nameCoin)  
         # в.
     calculatorT=analytics.calculate_time_to_expiration(
-        expiration_date=dateExpertion
-    )
+        expiration_date=dateExpertion)
     
     # Извлекаем текущую цену спота из словаря
     spot_price = ticCallPutStrikePrice.get('ticPrice')
+        # ===================================================================
+    # 5. виаулизация опционов выбраной экспирацию страйков, премий, симбол 
+    logger.warning(f"5. виаулизация опционов выбраной экспирацию страйков, премий, симбол")
     
-    
-    # ==================================================
     # тест функции генирации опциона с премией
     strikeSellPut4=analytics.generate_option_grid_premiums(
         ticCallPutStrikePrice=ticCallPutStrikePrice,
         nameFullOption=nameFullOption,
         sigma_=sigma_,
-        calculatorT=calculatorT
-    )
-    logger.info(f"тест функции генирации опциона с "
-                f"премией  {strikeSellPut4}")
+        calculatorT=calculatorT)
+    
+    print(f"ticPrice {strikeSellPut4['ticPrice']} ")
+    
+    for key, volmes in strikeSellPut4.items():
+        if key == 'calls_grid':
+            count=0
+            print('Call')
+            for volme in volmes:
+                print(f"{count} {volme}")
+                count+=1
+        elif key == 'puts_grid':
+            count=0
+            print('Put')
+            for volme in volmes:
+                print(f"{count} {volme}")
+                count+=1
   
-    
-    
-    # # Создаем новые чистые списки, куда запишем страйки вместе с рассчитанными премиями
-    # calculated_calls = []
-    # calculated_puts = []
-
-    # # 1. Расчет для CALL опционов
-    # if 'strikeCall' in ticCallPutStrikePrice:
-    #     for idx, strike in enumerate(ticCallPutStrikePrice['strikeCall']):
-    #         premia_call = analytics.calculate_black_scholes_fast3(
-    #             S=spot_price,
-    #             K=strike,
-    #             sigma=sigma_,
-    #             r=0.02,
-    #             T=calculatorT,
-    #             option_type='call' # убедитесь, что ваша функция принимает тип опциона
-    #         )
-    #         # Сохраняем в структуре: [{Номер: [Страйк, Премия]}]
-    #         calculated_calls.append({idx + 1: [strike, premia_call]})
-
-    # # 2. Расчет для PUT опционов
-    # if 'strikePut' in ticCallPutStrikePrice:
-    #     for idx, strike in enumerate(ticCallPutStrikePrice['strikePut']):
-    #         premia_put = analytics.calculate_black_scholes_fast3(
-    #             S=spot_price,
-    #             K=strike,
-    #             sigma=sigma_,
-    #             r=0.02,
-    #             T=calculatorT,
-    #             option_type='put'
-    #         )
-    # #         calculated_puts.append({idx + 1: [strike, premia_put]})
-
-    # # Обновляем наш словарь финальными массивами данных
-    # ticCallPutStrikePrice['strikeCall'] = calculated_calls
-    # ticCallPutStrikePrice['strikePut'] = calculated_puts
-    
-    logger.info(f"Расчет премий завершен успешно. {ticCallPutStrikePrice}")
-
+  
+    # ==============================================================
+    logger.warning(f"6. выбираем колл или пут оционы")
     # собираю симбол опциона
     symbolOptionBybit = analytics.allSymbolBybitOption(
-        dataTicPrice=ticCallPutStrikePrice,
+        dataTicPrice=strikeSellPut4,
         nameOptin=nameFullOption)
     
-    logger.info(f"symbolOptionBybit {symbolOptionBybit}")
+    
+    # ==============================================================
+    logger.warning(f" 7. выбираем покупка или продажа опциона")
+    logger.debug(f"1 symbolOptionBybit {symbolOptionBybit}")
+    symbolOptionBybit = analytics.selctionBuySell(
+        dataTicStrikePremiumSymbol=symbolOptionBybit )
+    logger.info(f"2 symbolOptionBybit {symbolOptionBybit}")
     
     #  покупка опциона 
+    # =============================================================
+        # =============================================================
     
-    # order_result = clientBybit.place_option_order2(
-    #     symbol=strikeSellPut4['calls_grid'][1]['symbol'],
-    #     side='sell',
-    #     qty=configBybit.priceCoinMinOrder[nameCoin.upper()],
-    #     price=strikeSellPut4['calls_grid'][1]['premium'],   ) 
-        
-    # )
-    # order_result = clientBybit.chase_order(
-    #     symbol=
-    # )
+    logger.warning(f"8. открываем ордер")
+    success = clientBybit.chase_order(
+        symbol=symbolOptionBybit['symbol'],
+        side=symbolOptionBybit['buyOrSell'],
+        qty=1,
+        price_limit=symbolOptionBybit['premium'],
+        check_interval_sec=30,
+        slippage_step_pct=1,
+        max_slippage_pct=8)   
+
+    logger.info(f"{success}")
+    
+    
 # ============================================================
 # ТОЧКА ЗАПУСКА
 # ============================================================
