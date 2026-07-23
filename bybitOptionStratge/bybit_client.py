@@ -555,9 +555,9 @@ class BybitOptionBot:
         """
 
         side = side.lower()
-        logger.info(f"Запуск Chase Order [{side.upper()}] для {symbol}. Базовый лимит: {price_limit}")
+        logger.info(f"Запуск Чистого Chase Order [{side.upper()}] для {symbol}. Базовый лимит: {price_limit}")
 
-        # Ссылка на ваш формат CCXT символа
+        # === ШАГ 1: ПЕРЕВОД СИМВОЛА В ВАШ СТАНДАРТ CCXT ДЛЯ ЗАПРОСА СТАКАНА ===
         parts = symbol.upper().split('-')
         if len(parts) == 4:
             base_coin, date_str, strike, option_type = parts
@@ -566,114 +566,141 @@ class BybitOptionBot:
         else:
             ccxt_symbol = symbol
 
+        # Определение центового шага и знаков после запятой
         tick_size = 0.0001 if "DOGE" in symbol else (0.5 if "BTC" in symbol else 0.01)
         decimals = 4 if "DOGE" in symbol else (1 if "BTC" in symbol else 2)
 
-        # Запоминаем изначальный теоретический лимит
-        base_limit = price_limit
-        accumulated_slippage = 0.0  # Сколько процентов мы уже уступили рынку
-
-        # === ЦИКЛ ПОДБОРА СТАРТОВОЙ ЦЕНЫ С УЧЕТОМ УСТУПКИ 1% ===
-        while True:
+        # === ШАГ 2: ОПРЕДЕЛЕНИЕ СТАРТОВОЙ ЦЕНЫ ВХОДА БЕЗ ПЕРЕБОРОВ ===
+        if side == 'buy':
+            # Для покупки: стартуем на 1 шаг выше лучшего покупателя в стакане
             try:
                 orderbook = self.exchange.fetch_order_book(ccxt_symbol)
-            except Exception as e:
-                logger.error(f"Не удалось получить стакан для {ccxt_symbol}: {e}")
-                return False
-
-            # --- ИСПРАВЛЕННЫЙ БЛОК ИЗВЛЕЧЕНИЯ ЧИСЛА ЦЕНЫ [0][0] ---
-            if side == 'buy':
-                # Берем цену первого бида [0][0], а не весь массив
                 best_bid = orderbook['bids'][0][0] if len(orderbook['bids']) > 0 else 0.0
-                current_target_price = round(best_bid + tick_size, decimals)
-                
-                dynamic_limit = base_limit * (1 + accumulated_slippage / 100)
-                  
-                if current_target_price > dynamic_limit:
-                    if accumulated_slippage >= max_slippage_pct:
-                        logger.warning(f"Достигнут предел уступки ({max_slippage_pct}%). Рынок слишком дорогой. Отмена.")
-                        return False
-                    
-                    accumulated_slippage += slippage_step_pct
-                    logger.info(f"Стартовая цена выше лимита. Уступаем рынку +{slippage_step_pct}%. Новый лимит покупки: {round(dynamic_limit, decimals)}")
-                    time.sleep(1)
-                    continue
-                
-            else:  # sell
-                # Берем цену первого аска [0][0], а не весь массив
+            except Exception:
+                best_bid = 0.0
+            current_target_price = round(best_bid + tick_size, decimals)
+            
+            if current_target_price > price_limit * 1.4: #perschitivaem premia  do 40%
+                logger.warning(f"Рынок слишком дорогой для старта покупки"
+                               f"({current_target_price} > {price_limit}). Отмена.")
+                return False
+        else:
+            # === ДЛЯ КОНКРЕТНОГО SELL ===
+            # 1. Стартуем продажи строго сверху — с вашей теоретической премии!
+            current_target_price = round(price_limit, decimals)
+            
+            # 2. Запрашиваем стакан только для защитной проверки безопасности
+            try:
+                orderbook = self.exchange.fetch_order_book(ccxt_symbol)
                 best_ask = orderbook['asks'][0][0] if len(orderbook['asks']) > 0 else 999999.0
-                current_target_price = round(best_ask - tick_size, decimals)
+            except Exception:
+                best_ask = current_target_price
+            
+            # 3. ЗАЩИТА: Если реальный рынок (best_ask) упал на самое дно (ниже 60% от теории),
+            # то выставлять ордер по теории нет смысла — его никто не купит, а если упадет dynamic_limit, 
+            # мы продадим за бесценок. Отменяем сделку.
+            if best_ask < price_limit * 0.6:
+                logger.warning(f"Рынок слишком дешев для продажи. Лучший Ask в стакане"
+                               f" ({best_ask}) ниже 60% от теории"
+                               f" ({round(price_limit * 0.6, decimals)}). Отмена.")
+                return False
                 
-                dynamic_limit = base_limit * (1 - accumulated_slippage / 100)
-                
-                if current_target_price < dynamic_limit:
-                    if accumulated_slippage >= max_slippage_pct:
-                        logger.warning(f"Достигнут предел уступки ({max_slippage_pct}%). Рынок слишком дешевый. Отмена.")
-                        return False
-                    
-                    # Делаем шаг уступки -1% (снижаем требования к прибыли, чтобы ордер открылся)
-                    accumulated_slippage += slippage_step_pct
-                    logger.info(f"Рыночный Ask ({current_target_price}) ниже лимита. Снижаем планку на -{slippage_step_pct}%. Новый лимит продажи: {round(dynamic_limit, decimals)}")
-                    time.sleep(check_interval_sec)
-                    continue
+            logger.info(f"Выставляем ордер SELL сразу в стакан по теоретической цене: "
+                        f" {current_target_price}. (Рыночный Ask: {best_ask})")
+            
+            
 
-            break
-
-        # === ВЫСТАВЛЕНИЕ ПЕРВОГО ОРДЕРА (Используем вашу рабочую функцию) ===
+        # === ШАГ 3: МГНОВЕННОЕ РАЗМЕЩЕНИЕ СТАРТОВОГО ОРДЕРА ===
+        # Вызываем вашу проверенную функцию place_option_order2
         response = self.place_option_order2(symbol, side, qty, current_target_price)
         if not response or 'id' not in response:
+            logger.error("Не удалось разместить стартовый ордер на бирже.")
             return False
             
         order_id = response['id']
+        accumulated_slippage = 0.0  # Суммарный процент уступки маркету
 
-        # === ОСНОВНОЙ ЦИКЛ ОТСЛЕЖИВАНИЯ (Внутри стакана) ===
+        # === ШАГ 4: ОСНОВНОЙ ЦИКЛ ПРЕСЛЕДОВАНИЯ ВНУТРИ СТАКАНА ===
         while True:
+            # Уважаем задержку времени, переданную из интерфейса main.py
             time.sleep(check_interval_sec)
 
-            try:
-                order_info = self.exchange.fetch_order(order_id, ccxt_symbol)
-                status = order_info['status']
-            except Exception as e:
-                logger.warning(f"Ошибка fetch_order: {e}. Повтор...")
-                continue
+            # --- ИСПРАВЛЕНИЕ: ЖЕЛЕЗОБЕТОННАЯ ПРОВЕРКА ЧЕРЕЗ АКТИВНЫЕ ПОЗИЦИИ ---
+            # Вызываем ваш метод проверки живых открытых опционов
+            live_positions = self.get_active_open_options()
+            
+            # Ищем, появилась ли наша нога в списке реальных позиций на балансе
+            # Сравниваем строго с исходным красивым именем (напр. SOL-31JUL26-76-P)
+            is_position_opened = any(pos['symbol'] == symbol for pos in live_positions)
 
-            if status == 'closed':
-                logger.info(f"🎉 Нога {symbol} ПОЛНОСТЬЮ ИСПОЛНЕНА по цене {current_target_price}!")
+            if is_position_opened:
+                logger.info(f"🎉 ПОДТВЕРЖДЕНО ПОЗИЦИЕЙ: Опцион {symbol} успешно прошел и удерживается на балансе аккаунта!")
                 return True
+
+            # --- ЗАПАСНАЯ ПРОВЕРКА ЧЕРЕЗ СТАТУС ОРДЕРА ---
+            # Вызываем функцию check_order_status (с params={'category': 'option'} внутри)
+            status = self.check_order_status(order_id, ccxt_symbol)
+            
+            if status == 'closed':
+                logger.info(f"🎉 Нога {symbol} [{side.upper()}] ПОЛНОСТЬЮ ИСПОЛНЕНА по данным статуса ордера!")
+                return True
+
             if status == 'canceled':
+                logger.warning(f"Ордер {order_id} был неожиданно отменен.")
                 return False
 
-            try:
-                orderbook = self.exchange.fetch_order_book(ccxt_symbol)
-            except Exception as e:
+            if status == 'error':
+                logger.info("Временный сбой сети при проверке ордера. Ждем следующий круг...")
                 continue
 
-            # Логика динамического ведения ордера внутри стакана (с учетом нашей накопленной уступки)
-            if side == 'buy':
-                # Исправлено на [0][0]
-                new_bid = orderbook['bids'][0][0] if len(orderbook['bids']) > 0 else 0.0
-                new_target_price = round(new_bid + tick_size, decimals)
+            # --- ШАГ 5: ОБНОВЛЕНИЕ СТАКАНА И СДВИГ ЦЕНЫ НА 1% (Если сделка еще не прошла) ---
+            try:
+                orderbook = self.exchange.fetch_order_book(ccxt_symbol)
+            except Exception:
+                continue
+
+            # Логика плавного скольжения лимитки для ПРОДАЖИ (Sell)
+            if side == 'sell':
+                best_ask = orderbook['asks'][0][0] if len(orderbook['asks']) > 0 else 999999.0
                 
-                if new_target_price > current_target_price:
-                    if new_target_price > dynamic_limit:
-                        logger.warning(f"Цена стакана превысила даже скорректированный лимит. Снятие ордера.")
+                # Если нас перебили конкуренты и цена Ask ушла ниже нашего ордера
+                if best_ask < current_target_price:
+                    accumulated_slippage += slippage_step_pct
+                    
+                    if accumulated_slippage > max_slippage_pct:
+                        logger.warning(f"Достигнут предел уступки ({max_slippage_pct}%). Снимаем ордер с торгов.")
                         self._safe_cancel(order_id, ccxt_symbol)
                         return False
+                        
+                    # Делаем скидку 1% от изначальной теоретической стоимости
+                    new_target_price = round(price_limit * (1 - accumulated_slippage / 100), decimals)
+                    logger.info(f"Ордер не исполнен. Уступаем рынку -{slippage_step_pct}%. Снижаем цену SELL до: {new_target_price}")
+                    
+                    # Отменяем старый ордер и выставляем новый ниже по цене
                     self._safe_cancel(order_id, ccxt_symbol)
                     response = self.place_option_order2(symbol, side, qty, new_target_price)
                     if response and 'id' in response:
                         order_id = response['id']
                         current_target_price = new_target_price
-            else:  # sell
-                # Исправлено на [0][0]
-                new_ask = orderbook['asks'][0][0] if len(orderbook['asks']) > 0 else 999999.0
-                new_target_price = round(new_ask - tick_size, decimals)
+
+            # Логика плавного скольжения лимитки для ПОКУПКИ (Buy)
+            else:  # buy
+                best_bid = orderbook['bids'][0][0] if len(orderbook['bids']) > 0 else 0.0
                 
-                if new_target_price < current_target_price:
-                    if new_target_price < dynamic_limit:
-                        logger.warning(f"Цена упала ниже скорректированного лимита прибыли. Снятие ордера.")
+                # Если покупатели подняли ставки выше нашего ордера
+                if best_bid > current_target_price:
+                    accumulated_slippage += slippage_step_pct
+                    
+                    if accumulated_slippage > max_slippage_pct:
+                        logger.warning(f"Достигнут предел уступки для покупки. Снимаем ордер.")
                         self._safe_cancel(order_id, ccxt_symbol)
                         return False
+                        
+                    # Повышаем планку нашего бюджета на +1%
+                    new_target_price = round(price_limit * (1 + accumulated_slippage / 100), decimals)
+                    logger.info(f"Покупатели перебили нас. Повышаем цену BUY до: {new_target_price}")
+                    
+                    # Отменяем старый ордер и выставляем новый выше по цене
                     self._safe_cancel(order_id, ccxt_symbol)
                     response = self.place_option_order2(symbol, side, qty, new_target_price)
                     if response and 'id' in response:
@@ -785,6 +812,98 @@ class BybitOptionBot:
             logger.error(f"Ошибка при анализе открытых ордеров: {e}")
 
         return report
+    
+    
+    def get_active_open_options(self) -> list:
+        """
+        Находит все открытые позиции по опционам на аккаунте, 
+        которые еще НЕ вышли из срока экспирации (активные живые контракты).
+        
+        Возвращает привычный формат символа (напр. SOL-31JUL26-76-P) и направление buy/sell.
+        :return: Список словарей с параметрами активных опционов
+        """
+        logger.info("Запуск проверки открытых и неэкспирированных опционов...")
+        active_options = []
+        
+        # Получаем текущее время сервера Bybit в миллисекундах
+        try:
+            current_timestamp = self.exchange.milliseconds()
+        except Exception:
+            current_timestamp = int(datetime.utcnow().timestamp() * 1000)
+
+        try:
+            # Запрашиваем только открытые позиции по опционам
+            positions = self.exchange.fetch_positions(params={"subType": "option"})
+            
+            for pos in positions:
+                ccxt_symbol = pos.get('symbol', '') # Приходит: SOL/USDT:USDT-260731-76-P
+                contracts = float(pos.get('contracts', 0.0)) # Объем позиции
+                
+                # Проверяем, что позиция действительно удерживается (объем не равен нулю)
+                if contracts != 0:
+                    
+                    # === 1. ПЕРЕВОД ВНУТРЕННЕГО ИМЕНИ CCXT В ВАШ СТАНДАРТНЫЙ SYMBOL ===
+                    # Из "SOL/USDT:USDT-260731-76-P" вытаскиваем "260731-76-P"
+                    if '-' in ccxt_symbol:
+                        symbol_parts = ccxt_symbol.split('-')
+                        base_coin = ccxt_symbol.split('/')[0] # 'SOL'
+                        
+                        ccxt_date = symbol_parts[1]   # '260731'
+                        strike = symbol_parts[2]      # '76'
+                        option_type = symbol_parts[3] # 'P'
+                        
+                        # Конвертируем инвертированную дату "260731" обратно в формат Bybit "31JUL26"
+                        try:
+                            parsed_date = datetime.strptime(ccxt_date, "%y%m%d")
+                            bybit_date_str = parsed_date.strftime("%d%b%y").upper() # '31JUL26'
+                            
+                            # Собираем ваш стандартный красивый символ
+                            clean_symbol = f"{base_coin}-{bybit_date_str}-{strike}-{option_type}"
+                        except Exception:
+                            clean_symbol = ccxt_symbol # Если сбой, оставляем как есть
+                    else:
+                        clean_symbol = ccxt_symbol
+
+                    # === 2. ОПРЕДЕЛЕНИЕ СТРОГОГО НАПРАВЛЕНИЯ BUY ИЛИ SELL ===
+                    # В CCXT для позиций: pos['side'] возвращает 'long' (покупка) или 'short' (продажа)
+                    raw_side = pos.get('side', '').lower()
+                    buy_or_sell = 'buy' if raw_side == 'long' else 'sell'
+
+                    # === 3. БЛОК ПРОВЕРКИ ДАТЫ ЭКСПИРАЦИИ ===
+                    try:
+                        parts = ccxt_symbol.split('-')
+                        if len(parts) >= 2:
+                            date_str = parts[1] # "260731"
+                            
+                            # Экспирация на Bybit всегда фиксируется в 08:00 UTC
+                            exp_date = datetime.strptime(date_str, "%y%m%d").replace(hour=8, minute=0)
+                            exp_timestamp = int(exp_date.timestamp() * 1000)
+                            
+                            # Если время жизни контракта больше текущего — опцион активен!
+                            if exp_timestamp > current_timestamp:
+                                time_left_hours = (exp_timestamp - current_timestamp) / (1000 * 60 * 60)
+                                
+                                # Добавляем опцион в финальный массив с вашими точными ключами
+                                active_options.append({
+                                    "symbol": clean_symbol,                     # Напр: SOL-31JUL26-76-P
+                                    "buyOrSell": buy_or_sell,                   # Напр: 'sell' или 'buy'
+                                    "size": contracts,                          # Объем контрактов
+                                    "entry_price": float(pos.get('entryPrice', 0.0)),
+                                    "hours_to_expiration": round(time_left_hours, 2)
+                                })
+                                logger.debug(f"🟢 Найдена живая позиция: {clean_symbol} | Действие: {buy_or_sell.upper()} | Осталось: {round(time_left_hours, 2)} ч.")
+                            else:
+                                logger.warning(f"🔴 Опцион {clean_symbol} находится в процессе экспирации. Игнорируем.")
+                    except Exception as e:
+                        logger.error(f"Ошибка парсинга времени для {ccxt_symbol}: {e}")
+                        continue
+                        
+            logger.debug(f"Анализ завершен. Найдено активных неэкспирированных опционов: {len(active_options)}")
+            
+        except Exception as e:
+            logger.error(f"Критическая ошибка fetch_positions: {e}")
+            
+        return active_options
 
 
         
@@ -793,7 +912,7 @@ class BybitOptionBot:
 # # # getD = bybitOpt.get_historical_closes_candals("DOGE")
 # # # getD = bybitOpt.fetch_option_market_data('BTC')
 # # # getD = bybitOpt.check_connection_and_balance()
-# # # getD = bybitOpt.get_all_option_coins()
+# getD = bybitOpt.get_all_option_coins()
 # # # getD = bybitOpt.get_option_expiration_dates()
 # # # getD = bybitOpt.get_ticker_by_symbol('sol')
 # # # getD = bybitOpt.get_option_strikes(base_coin="BTC", expiration_date='2026-07-10')
@@ -810,6 +929,7 @@ class BybitOptionBot:
 #     qty=1.0,
 #     price_limit=1.849953599160446,
 #     check_interval_sec=10)
+# getD = bybitOpt.get_active_open_options()
 
 
 

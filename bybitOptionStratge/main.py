@@ -155,11 +155,11 @@ def main():
     success = clientBybit.chase_order(
         symbol=symbolOptionBybit['symbol'],
         side=symbolOptionBybit['buyOrSell'],
-        qty=1,
+        qty=500,
         price_limit=symbolOptionBybit['premium'],
         check_interval_sec=30,
         slippage_step_pct=1,
-        max_slippage_pct=8)   
+        max_slippage_pct=20)   
 
     logger.info(f"{success}")
     
