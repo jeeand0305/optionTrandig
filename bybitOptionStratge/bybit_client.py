@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 from logger import logger
 from dotenv import load_dotenv
+from method_symbols import OptionAsset
 
 # COD WORK result list close candale days
 
@@ -558,6 +559,7 @@ class BybitOptionBot:
         logger.info(f"Запуск Чистого Chase Order [{side.upper()}] для {symbol}. Базовый лимит: {price_limit}")
 
         # === ШАГ 1: ПЕРЕВОД СИМВОЛА В ВАШ СТАНДАРТ CCXT ДЛЯ ЗАПРОСА СТАКАНА ===
+        # peresobiraem symbol pod CCXT
         parts = symbol.upper().split('-')
         if len(parts) == 4:
             base_coin, date_str, strike, option_type = parts
@@ -566,11 +568,25 @@ class BybitOptionBot:
         else:
             ccxt_symbol = symbol
 
-        # Определение центового шага и знаков после запятой
-        tick_size = 0.0001 if "DOGE" in symbol else (0.5 if "BTC" in symbol else 0.01)
-        decimals = 4 if "DOGE" in symbol else (1 if "BTC" in symbol else 2)
+        # === ШАГ 2: ДИНАМИЧЕСКИЙ ПОДБОР ПАРАМЕТРОВ С БИРЖИ (Вместо хардкода монет) ===
+        try:
+            # Берем спецификацию контракта из памяти CCXT
+            market = self.exchange.market(ccxt_symbol)
+            
+            # Автоматически вытаскиваем точный шаг цены (напр. 0.0001 для XRP, 0.01 для SOL)
+            tick_size = float(market['precision']['price'])
+            
+            # Автоматически вытаскиваем количество знаков после запятой (напр. 4 или 2)
+            decimals = int(market['precision']['price_decimals']) if 'price_decimals' in market['precision'] else 4
+            
+            logger.info(f"⚙️ Биржа вернула параметры для {ccxt_symbol}: Шаг цены={tick_size}, Округление={decimals}")
+        except Exception as e:
+            logger.error(f"❌ Не удалось динамически получить параметры рынка для {ccxt_symbol}: {e}")
+            logger.warning("Применяем защитные настройки по умолчанию (шаг 0.0001, 4 знака).")
+            tick_size = 0.0001
+            decimals = 4
 
-        # === ШАГ 2: ОПРЕДЕЛЕНИЕ СТАРТОВОЙ ЦЕНЫ ВХОДА БЕЗ ПЕРЕБОРОВ ===
+        # === ШАГ 3: ОПРЕДЕЛЕНИЕ СТАРТОВОЙ ЦЕНЫ ВХОДА БЕЗ ПЕРЕБОРОВ ===
         if side == 'buy':
             # Для покупки: стартуем на 1 шаг выше лучшего покупателя в стакане
             try:
@@ -580,7 +596,7 @@ class BybitOptionBot:
                 best_bid = 0.0
             current_target_price = round(best_bid + tick_size, decimals)
             
-            if current_target_price > price_limit * 1.4: #perschitivaem premia  do 40%
+            if current_target_price > price_limit * 1.7: #perschitivaem premia  do 40%
                 logger.warning(f"Рынок слишком дорогой для старта покупки"
                                f"({current_target_price} > {price_limit}). Отмена.")
                 return False
@@ -596,13 +612,13 @@ class BybitOptionBot:
             except Exception:
                 best_ask = current_target_price
             
-            # 3. ЗАЩИТА: Если реальный рынок (best_ask) упал на самое дно (ниже 60% от теории),
+            # 3. ЗАЩИТА: Если реальный рынок (best_ask) упал на самое дно (ниже 70% от теории),
             # то выставлять ордер по теории нет смысла — его никто не купит, а если упадет dynamic_limit, 
             # мы продадим за бесценок. Отменяем сделку.
-            if best_ask < price_limit * 0.6:
+            if best_ask < price_limit * 0.3:
                 logger.warning(f"Рынок слишком дешев для продажи. Лучший Ask в стакане"
-                               f" ({best_ask}) ниже 60% от теории"
-                               f" ({round(price_limit * 0.6, decimals)}). Отмена.")
+                               f" ({best_ask}) ниже 70% от теории"
+                               f" ({round(price_limit * 0.7, decimals)}). Отмена.")
                 return False
                 
             logger.info(f"Выставляем ордер SELL сразу в стакан по теоретической цене: "
@@ -610,7 +626,7 @@ class BybitOptionBot:
             
             
 
-        # === ШАГ 3: МГНОВЕННОЕ РАЗМЕЩЕНИЕ СТАРТОВОГО ОРДЕРА ===
+        # === ШАГ 4: МГНОВЕННОЕ РАЗМЕЩЕНИЕ СТАРТОВОГО ОРДЕРА ===
         # Вызываем вашу проверенную функцию place_option_order2
         response = self.place_option_order2(symbol, side, qty, current_target_price)
         if not response or 'id' not in response:
@@ -620,7 +636,7 @@ class BybitOptionBot:
         order_id = response['id']
         accumulated_slippage = 0.0  # Суммарный процент уступки маркету
 
-        # === ШАГ 4: ОСНОВНОЙ ЦИКЛ ПРЕСЛЕДОВАНИЯ ВНУТРИ СТАКАНА ===
+        # === ШАГ 5: ОСНОВНОЙ ЦИКЛ ПРЕСЛЕДОВАНИЯ ВНУТРИ СТАКАНА ===
         while True:
             # Уважаем задержку времени, переданную из интерфейса main.py
             time.sleep(check_interval_sec)
@@ -706,6 +722,43 @@ class BybitOptionBot:
                     if response and 'id' in response:
                         order_id = response['id']
                         current_target_price = new_target_price
+                        
+
+    def check_order_status(self, order_id: str, symbol: str) -> str:
+        """
+        Отдельная защищенная функция для проверки текущего статуса ордера на Bybit.
+        Универсально проверяет формат символа и защищает от варнингов CCXT.
+        """
+        # === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ТУТ ===
+        # Проверяем: если символ уже в формате CCXT (содержит '/' или ':')
+        if "/" in symbol or ":" in symbol:
+            ccxt_symbol = symbol
+        else:
+            # Если пришел "грязный" символ от математики (напр. XRP-27JUL26-1.12-C)
+            try:
+                parts = symbol.upper().split('-')
+                if len(parts) == 4:
+                    base_coin, date_str, strike, option_type = parts
+                    parsed_date = datetime.strptime(date_str, "%d%b%y")
+                    ccxt_symbol = f"{base_coin}/USDT:USDT-{parsed_date.strftime('%y%m%d')}-{strike}-{option_type}"
+                else:
+                    ccxt_symbol = symbol
+            except Exception:
+                ccxt_symbol = symbol
+
+        try:
+            # Передаем обязательный параметр category: option
+            order_info = self.exchange.fetch_order(
+                order_id, 
+                ccxt_symbol, 
+                params={'category': 'option'}
+            )
+            # Возвращает статус: 'open', 'closed' (filled) или 'canceled'
+            return order_info.get('status', 'open')
+            
+        except Exception as e:
+            logger.warning(f"Временный сбой сети при fetch_order для {order_id}: {e}")
+            return 'error'
 
 
 
@@ -833,7 +886,11 @@ class BybitOptionBot:
 
         try:
             # Запрашиваем только открытые позиции по опционам
-            positions = self.exchange.fetch_positions(params={"subType": "option"})
+            positions = self.exchange.fetch_positions(params={
+                "category" : "linear",
+                "settleCoin" : "USDT"})
+                
+                # "subType": "option"})
             
             for pos in positions:
                 ccxt_symbol = pos.get('symbol', '') # Приходит: SOL/USDT:USDT-260731-76-P
@@ -904,19 +961,402 @@ class BybitOptionBot:
             logger.error(f"Критическая ошибка fetch_positions: {e}")
             
         return active_options
+    
+    def get_active_open_options2(self) -> list:
+        """
+        Находит все открытые позиции по опционам на аккаунте, 
+        которые еще НЕ вышли из срока экспирации (активные живые контракты).
+        
+        ОТБОР И ФИЛЬТРАЦИЯ (КРИТИЧЕСКИ ДЛЯ ДЕЛЬТА-ХЕДЖА):
+        -----------------------------------------------
+        Функция автоматически ИСКЛЮЧАЕТ из выдачи все опционы, для которых 
+        на бирже Bybit включен встроенный режим авто-хеджирования DDH (Dynamic Delta Hedging).
+        Это защищает кастомный модуль хеджирования от конфликтов с автоматикой биржи.
+        Опционы под защитой DDH (например, SOL, DOGE) логируются и игнорируются.
+        
+        Возвращает привычный формат символа (напр. SOL-31JUL26-76-P) и направление buy/sell.
+        :return: Список словарей с параметрами активных НЕЗАЩИЩЕННЫХ опционов
+        """
 
+        logger.info("Запуск универсальной проверки открытых опционов...")
+        active_options = []
+        
+        try:
+            current_timestamp = self.exchange.milliseconds()
+        except Exception:
+            current_timestamp = int(datetime.utcnow().timestamp() * 1000)
+
+        try:
+            # === УНИВЕРСАЛЬНЫЙ СТАНДАРТ CCXT ===
+            # Для Bybit эти параметры обязательны, а другие биржи (Deribit/OKX) 
+            # их просто проигнорируют и вернут список позиций по своим правилам!
+            positions = self.exchange.fetch_positions(params={
+                "category": "linear",
+                "settleCoin": "USDT"
+            })
+            
+            logger.info(f"Успешно получено {len(positions)} позиций через стандарт CCXT.")
+            
+            for pos in positions:
+                # CCXT автоматически приводит ответ любой биржи к единому стандарту!
+                # На любой бирже имя будет в 'symbol', а объем в 'contracts'
+                ccxt_symbol = pos.get('symbol', '')
+                contracts = float(pos.get('contracts', 0.0))
+                
+                # Фильтруем только открытые опционы
+                # (В USDT-опционах Bybit и в опционах Deribit всегда есть дефис и тип ноги C/P)
+                if contracts != 0 and "-" in ccxt_symbol and ("-C" in ccxt_symbol or "-P" in ccxt_symbol):
+                    
+                    # Наш умный OptionAsset сам разберется с синтаксисом конкретной биржи
+                    asset = OptionAsset(raw_symbol=ccxt_symbol, exchange_instance=self.exchange)
+                    
+                    raw_side = pos.get('side', '').lower()
+                    buy_or_sell = 'buy' if raw_side == 'long' else 'sell'
+                    
+                    # CCXT стандартизирует даже время экспирации! Поле 'expiry' есть в market-данных любой биржи
+                    market_data = self.exchange.markets.get(ccxt_symbol, {})
+                    expiry_timestamp = market_data.get('expiry', 0)
+                    
+                    if expiry_timestamp == 0 or expiry_timestamp > current_timestamp:
+                        time_left_hours = (expiry_timestamp - current_timestamp) / (1000 * 60 * 60) if expiry_timestamp > 0 else 99.0
+                        
+                        active_options.append({
+                            "symbol": asset.raw_symbol,
+                            "buyOrSell": buy_or_sell,
+                            "size": contracts,
+                            "entry_price": float(pos.get('entryPrice', 0.0)), # В стандарте CCXT цена всегда в entryPrice
+                            "hours_to_expiration": round(time_left_hours, 2),
+                            "strike": asset.strike,
+                            "type": asset.type,
+                            "futures_symbol": asset.futures_symbol
+                        })
+                        logger.info(f"🟢 Найдена позиция: {ccxt_symbol} | Объем: {contracts} | {buy_or_sell.upper()}")
+            
+            logger.info(f"Анализ завершен. Найдено активных опционов: {len(active_options)}")
+
+        except Exception as e:
+            logger.error(f"Критическая ошибка fetch_positions: {e}")
+            
+        return active_options
+
+  
+    def set_futures_leverage(self, base_currency: str, leverage: int = 10) -> bool:
+        """
+        Отдельная функция для принудительной установки кредитного плеча на фьючерсах Bybit.
+        Рекомендуется вызывать ОДИН РАЗ при старте бота или выборе монеты.
+        
+        :param base_currency: Название монеты (MNT, DOGE, SOL, BTC)
+        :param leverage: Размер кредитного плеча (например, 5, 10, 20)
+        :return: True если успешно или уже установлено, False при критической ошибке
+        """
+        base_currency = base_currency.upper()
+        futures_symbol = f"{base_currency}/USDT:USDT"
+        
+        logger.info(f"⚙️ Запрос на установку плеча {leverage}x для фьючерса {futures_symbol}...")
+        
+        try:
+            # Вызываем метод CCXT v5 для Единого торгового аккаунта
+            self.exchange.set_leverage(
+                leverage=leverage,
+                symbol=futures_symbol,
+                params={'category': 'linear'}
+            )
+            logger.info(f"✅ Кредитное плечо {leverage}x для {futures_symbol} успешно подтверждено биржей.")
+            return True
+            
+        except Exception as e:
+            # Bybit v5 API возвращает ошибку, если вы пытаетесь установить то же самое плечо, 
+            # которое уже выбрано в терминале. Мы это обрабатываем как УСПЕХ.
+            err_msg = str(e).lower()
+            if "leverage not modified" in err_msg or "110043" in err_msg or "not modified" in err_msg:
+                logger.info(f"ℹ️ Плечо {leverage}x для {futures_symbol} уже установлено на аккаунте. Пропускаем.")
+                return True
+                
+            logger.error(f"❌ Не удалось установить плечо для {futures_symbol}: {e}")
+            return False
+    
+
+    def place_futures_hedge_order(self,
+                                  base_currency: str, 
+                                  side: str, 
+                                  qty: float) -> dict:
+        """
+        Открывает фьючерсную позицию (линейный бессрочный контракт) для хеджирования опционов.
+        Работает напрямую по API Bybit в обход локального кэша CCXT.
+        
+        ВХОДНЫЕ ДАННЫЕ:
+        ---------------
+        :param base_currency: Название монеты крупными буквами. Пример: 'DOGE', 'SOL', 'BTC'.
+        :param side:          Направление хэджа. Строка: 'buy' (Long-хэдж) или 'sell' (Short-хэдж).
+        :param qty:           Объем хэджа в количестве монет базового актива. Пример: 500.0 или 1.0.
+        """
+        # Принудительно форматируем входные строки к стандартам биржи
+        base_currency = base_currency.upper()
+        side = side.lower()
+        
+        # Строим линейный символ, который Bybit v5 API ожидает в категории 'linear'
+        # Из 'DOGE' получаем 'DOGE/USDT:USDT'
+        futures_symbol = f"{base_currency}/USDT:USDT"
+        
+        logger.info(f"⚡ Подготовка модуля хеджирования: {side.upper()} {qty} фьючерсов {futures_symbol}")
+
+        try:
+            # === ШАГ 1: КОРРЕКЦИЯ ЛОТНОСТИ (ОБЪЕМА) ДЛЯ РАЗНЫХ МОНЕТ ===
+            # Так как мы обходим кэш markets, робот сам знает структуру контрактов Bybit:
+            if "DOGE" in futures_symbol:
+                safe_qty = int(qty)       # Для DOGE объем может быть только целым (минимальный шаг = 1 монета)
+            elif "BTC" in futures_symbol:
+                safe_qty = round(qty, 3)  # Для Биткоина шаг объема очень мелкий (до 0.001 BTC)
+            # elif "MNT" in futures_symbol: 
+            #     safe_qty = round(qty, 2)
+            else:
+                safe_qty = round(qty, 1)  # Для Соланы и Эфира лотность идет до 1 знака (напр. 0.1 SOL)
+
+            # === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ОПРЕДЕЛЯЕМ ИНДЕКС ДЛЯ HEDGE MODE ===
+            # Bybit v5 требует: 1 - для Long (buy), 2 - для Short (sell)
+            position_index = 1 if side == 'buy' else 2
+            
+            # === ШАГ 2: ОТПРАВКА СРОЧНОГО МАРКЕТ-ОРДЕРА ===
+            # Мы используем тип 'market', чтобы хэдж сработал мгновенно по стакану.
+            response = self.exchange.create_order(
+                symbol=futures_symbol,
+                type='market',            # Исполняется моментально по текущей рыночной цене
+                side=side,                # 'buy' или 'sell'
+                amount=safe_qty,          # Скорректированный объем лота
+                params={
+                    'category': 'linear',  # Указываем Bybit, что это рынок бессрочных фьючерсов
+                    'positionIdx': position_index
+                }
+            )
+            
+            order_id = response.get('id', 'Неизвестный ID')
+            logger.info(f"🎯 Фьючерсный хедж успешно размещен на бирже! Присвоен ID ордера: {order_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"❌ Критическая ошибка при открытии фьючерсного хеджа для {futures_symbol}: {e}")
+            return None
+        
+        
+    def process_hedging_logic(self, buffer_pct: float = 0.005):
+        """
+        Шаги 9-13: Контроль рисков для мульти-аккаунтной торговли с единым буфером.
+        Правильно суммирует объемы хеджа, если открыто 2+ опциона по одной монете.
+        :param buffer_pct: Единый процент буфера для всех инструментов (0.005 = 0.5%)
+        """
+        # Шаг 9: Получаем список активных живых опционов вашей функцией
+        active_options = self.get_active_open_options2()
+        
+        if not active_options:
+            logger.info("Нет активных опционных позиций для контроля рисков.")
+            return
+
+        # Словарь для расчета необходимого объема фьючерсов по каждой монете
+        # Формат: {"BTC": {"target_long": 0.0, "target_short": 0.0}}
+        required_hedge = {}
+
+        # ЭТАП 1: Анализируем все опционы и собираем целевые объемы фьючерсов
+        for option in active_options:
+            if option["buyOrSell"] != "sell":
+                continue
+                
+            symbol = option["symbol"]
+            size = option["size"]
+            
+            try:
+                parts = symbol.split("-")
+                base_coin = parts[0].upper()
+                strike = float(parts[2])
+                opt_type = parts[3].upper()
+            except Exception as e:
+                logger.error(f"Ошибка парсинга параметров символа {symbol}: {e}")
+                continue
+
+            # Шаг 10: Получаем цену спота вашей функцией
+            tick_price = self.get_ticker_by_symbol(base_coin)
+            if not tick_price:
+                continue
+
+            # Инициализируем монету в словаре, если её там еще нет
+            if base_coin not in required_hedge:
+                required_hedge[base_coin] = {"target_long": 0.0, "target_short": 0.0}
+
+            # Рассчитываем триггеры с учетом единого buffer_pct
+            if opt_type == "C":
+                activation_price = strike
+                deactivation_price = strike * (1.0 - buffer_pct)
+                
+                # Если цена выше страйка, нам ОДНОЗНАЧНО нужен лонг фьючерса на этот объем
+                if tick_price >= activation_price:
+                    required_hedge[base_coin]["target_long"] += size
+                # Если цена упала ниже буфера деактивации, этот объем нам больше НЕ нужен
+                elif tick_price < deactivation_price:
+                    pass  # Объем остается 0.0
+                # Если цена внутри буфера, сохраняем текущее состояние (логика гистерезиса)
+                else:
+                    # Проверяем, открыт ли уже какой-то хедж на бирже, чтобы не дергать его внутри буфера
+                    try:
+                        futures_symbol = f"{base_coin}/USDT:USDT"
+                        f_pos = self.exchange.fetch_position(futures_symbol, params={'category': 'linear'})
+                        if f_pos and f_pos.get('side', '').lower() == 'long':
+                            required_hedge[base_coin]["target_long"] += size
+                    except Exception:
+                        pass
+
+            elif opt_type == "P":
+                activation_price = strike
+                deactivation_price = strike * (1.0 + buffer_pct)
+                
+                # Если цена ниже страйка, нам ОДНОЗНАЧНО нужен шорт фьючерса
+                if tick_price <= activation_price:
+                    required_hedge[base_coin]["target_short"] += size
+                # Если цена ушла выше буфера, шорт не нужен
+                elif tick_price > deactivation_price:
+                    pass
+                # Если внутри буфера — удерживаем объем, если он уже был открыт
+                else:
+                    try:
+                        futures_symbol = f"{base_coin}/USDT:USDT"
+                        f_pos = self.exchange.fetch_position(futures_symbol, params={'category': 'linear'})
+                        if f_pos and f_pos.get('side', '').lower() == 'short':
+                            required_hedge[base_coin]["target_short"] += size
+                    except Exception:
+                        pass
+
+        # ЭТАП 2: Сравниваем требуемый объем с реальным на бирже и приводим в соответствие
+        for base_coin, targets in required_hedge.items():
+            futures_symbol = f"{base_coin}/USDT:USDT"
+            
+            # Запрашиваем текущую реальную позицию по фьючерсу
+            try:
+                f_pos = self.exchange.fetch_position(futures_symbol, params={'category': 'linear'})
+                current_size = float(f_pos.get('contracts', 0.0)) if f_pos else 0.0
+                f_side = f_pos.get('side', '').lower() if f_pos else 'none'
+            except Exception as e:
+                logger.error(f"Не удалось проверить позицию фьючерса {futures_symbol}: {e}")
+                continue
+
+            # Разделяем реальный объем на лонг и шорт для удобства сравнения
+            current_long = current_size if f_side == 'long' else 0.0
+            current_short = current_size if f_side == 'short' else 0.0
+
+            # --- Коррекция ЛОНГ хеджа (для Call опционов) ---
+            if targets["target_long"] > current_long:
+                # Нужно добрать лонг фьючерса
+                diff = targets["target_long"] - current_long
+                logger.warning(f"⚠️ Требуется ЛОНГ хедж по {base_coin}. Добираем объем: {diff}")
+                self.place_futures_hedge_order(base_currency=base_coin, side="buy", qty=diff)
+            elif targets["target_long"] < current_long:
+                # Нужно сократить лонг фьючерса (опцион вышел из денег)
+                diff = current_long - targets["target_long"]
+                logger.info(f"✅ Опцион CALL по {base_coin} вышел из денег/буфера. Закрываем лонг на объем: {diff}")
+                self.place_futures_hedge_order(base_currency=base_coin, side="sell", qty=diff)
+
+            # --- Коррекция ШОРТ хеджа (для Put опционов) ---
+            if targets["target_short"] > current_short:
+                # Нужно добрать шорт фьючерса
+                diff = targets["target_short"] - current_short
+                logger.warning(f"⚠️ Требуется ШОРТ хедж по {base_coin}. Добираем объем: {diff}")
+                self.place_futures_hedge_order(base_currency=base_coin, side="sell", qty=diff)
+            elif targets["target_short"] < current_short:
+                # Нужно сократить шорт фьючерса (опцион вышел из денег)
+                diff = current_short - targets["target_short"]
+                logger.info(f"✅ Опцион PUT по {base_coin} вышел из денег/буфера. Закрываем шорт на объем: {diff}")
+                self.place_futures_hedge_order(base_currency=base_coin, side="buy", qty=diff)
+
+    def get_active_open_options3(self) -> list:
+        """
+        УНИВЕРСАЛЬНЫЙ АВТОНОМНЫЙ МЕТОД СБОРА ПОЗИЦИЙ (Шаг 9 плана).
+        
+        Сам запрашивает ВСЕ позиции с Bybit v5. В скобках ничего передавать НЕ НАДО.
+        Сам находит символы в балансе и парсит их через OptionAsset.
+        Никаких ошибок 'Missing parameters' или 'list object has no attribute get' здесь больше нет.
+        """
+        # Принудительно импортируем наш отлаженный универсальный класс-парсер
+
+        logger.info("Запуск проверки открытых, неэкспирированных и живых опционов...")
+        active_options = []
+        
+        try:
+            current_timestamp = self.exchange.milliseconds()
+        except Exception:
+            current_timestamp = int(datetime.utcnow().timestamp() * 1000)
+
+        try:
+            # Универсальный вызов CCXT. Задаем параметры строго для Единого аккаунта Bybit
+            positions = self.exchange.fetch_positions(params={
+                "category": "option",
+                "settleCoin": "USDT"
+            })
+            
+            # ЖЕЛЕЗОБЕТОННЫЙ ПРЕДОХРАНИТЕЛЬ: Bybit может вернуть как список, так и словарь
+            if isinstance(positions, dict):
+                positions_list = positions.get('result', {}).get('list', [])
+            elif isinstance(positions, list):
+                positions_list = positions
+            else:
+                positions_list = []
+
+            # Перебираем каждую позицию, которую Bybit САМА выдала из нашего баланса
+            for pos in positions_list:
+                # Биржа сама поставляет нам имя контракта (symbol) и объем (contracts)
+                pos_symbol = pos.get('symbol', '')
+                
+                # В зависимости от версии CCXT объем может лежать в contracts или size
+                try:
+                    contracts = float(pos.get('contracts', pos.get('size', 0.0)))
+                except Exception:
+                    contracts = 0.0
+                
+                # Фильтруем: берем только реальные открытые опционы альткоинов (с дефисом и C/P)
+                if contracts != 0 and "-" in pos_symbol and ("-C" in pos_symbol or "-P" in pos_symbol):
+                    
+                    # === РЕШЕНИЕ КОНФЛИКТА: Скармливаем парсеру переменную pos_symbol, которую взяли из баланса Bybit ===
+                    asset = OptionAsset(raw_symbol=pos_symbol, exchange_instance=self.exchange)
+                    
+                    # Определяем направление сделки
+                    raw_side = pos.get('side', '').lower()
+                    buy_or_sell = 'buy' if raw_side == 'long' or raw_side == 'buy' else 'sell'
+                    
+                    # Подтягиваем время жизни из кэша CCXT
+                    market_data = self.exchange.markets.get(asset.ccxt_symbol, {})
+                    expiry_timestamp = market_data.get('expiry', 0)
+                    
+                    if expiry_timestamp == 0 or expiry_timestamp > current_timestamp:
+                        time_left_hours = (expiry_timestamp - current_timestamp) / (1000 * 60 * 60) if expiry_timestamp > 0 else 99.0
+                        
+                        # Собираем чистый, готовый для математики Шага 10 словарь
+                        active_options.append({
+                            "symbol": asset.raw_symbol,                 # Имя от математики
+                            "ccxt_symbol": asset.ccxt_symbol,           # Имя для стаканов
+                            "buyOrSell": buy_or_sell,                   # 'buy' или 'sell'
+                            "size": contracts,                          # Объем сделки
+                            "entry_price": float(pos.get('entryPrice', pos.get('avgPrice', 0.0))),
+                            "hours_to_expiration": round(time_left_hours, 2),
+                            "strike": asset.strike,                      # Чистый флоат страйка
+                            "type": asset.type,                          # 'C' или 'P'
+                            "futures_symbol": asset.futures_symbol       # Имя фьючерса для хеджа
+                        })
+                        logger.info(f"🟢 Успешно взят на контроль опцион: {asset.raw_symbol} | {buy_or_sell.upper()} | Страйк: {asset.strike}")
+                        
+            logger.info(f"Анализ аккаунта завершен. Живых опционов в портфеле: {len(active_options)}")
+            
+        except Exception as e:
+            logger.error(f"Критическая ошибка при сканировании позиций Bybit: {e}")
+            
+        return active_options
 
         
-# bybitOpt = BybitOptionBot()
+bybitOpt = BybitOptionBot()
 
-# # # getD = bybitOpt.get_historical_closes_candals("DOGE")
-# # # getD = bybitOpt.fetch_option_market_data('BTC')
-# # # getD = bybitOpt.check_connection_and_balance()
+#  getD = bybitOpt.get_historical_closes_candals("DOGE")
+#  getD = bybitOpt.fetch_option_market_data('BTC')
+#  getD = bybitOpt.check_connection_and_balance()
 # getD = bybitOpt.get_all_option_coins()
-# # # getD = bybitOpt.get_option_expiration_dates()
-# # # getD = bybitOpt.get_ticker_by_symbol('sol')
-# # # getD = bybitOpt.get_option_strikes(base_coin="BTC", expiration_date='2026-07-10')
-# # # getD = bybitOpt.get_option_premium_prices2(strikes_grid={'ticPrice': 63042.5, 'strikeCall': [63500.0, 64000.0, 64500.0, 65000.0], 'strikePut': [63000.0, 62500.0, 62000.0, 61500.0]})
+# getD = bybitOpt.get_option_expiration_dates()
+# getD = bybitOpt.get_ticker_by_symbol('sol')
+# getD = bybitOpt.get_option_strikes(base_coin="BTC", expiration_date='2026-07-10')
+# getD = bybitOpt.get_option_premium_prices2(strikes_grid={'ticPrice': 63042.5, 'strikeCall': [63500.0, 64000.0, 64500.0, 65000.0], 'strikePut': [63000.0, 62500.0, 62000.0, 61500.0]})
 # getD = bybitOpt.place_option_order2(
 #     symbol='SOL-31JUL26-77-C',
 #     side='Sell',
@@ -929,9 +1369,17 @@ class BybitOptionBot:
 #     qty=1.0,
 #     price_limit=1.849953599160446,
 #     check_interval_sec=10)
-# getD = bybitOpt.get_active_open_options()
+getD = bybitOpt.get_active_open_options3()
+# getD = bybitOpt.place_futures_hedge_order(
+#     base_currency='MNT',
+#     side="buy",
+#     qty=50.0,)
+# getD = bybitOpt.set_futures_leverage(
+#     base_currency='SOL',
+#     leverage=10)
+# getD = bybitOpt.process_hedging_logic()
 
 
 
-# logger.info(f"{getD}")
+logger.info(f"{getD}")
 

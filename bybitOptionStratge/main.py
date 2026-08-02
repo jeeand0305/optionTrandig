@@ -87,8 +87,6 @@ def main():
     ticCallPutStrikePrice=clientBybit.get_option_strikes(
         base_coin=nameCoin, expiration_date=dateExpertion) 
     logger.debug(f" ticCallPutStrikePrice {ticCallPutStrikePrice} ")
-    
-
 
     # Расчет волотильности
         # а. последние 30 свечей
@@ -104,9 +102,12 @@ def main():
     
     # Извлекаем текущую цену спота из словаря
     spot_price = ticCallPutStrikePrice.get('ticPrice')
-        # ===================================================================
+    
+    
+    # ===================================================================
     # 5. виаулизация опционов выбраной экспирацию страйков, премий, симбол 
-    logger.warning(f"5. виаулизация опционов выбраной экспирацию страйков, премий, симбол")
+    logger.warning(f"5. виаулизация опционов выбраной экспирацию"
+                   f"страйков, премий, симбол")
     
     # тест функции генирации опциона с премией
     strikeSellPut4=analytics.generate_option_grid_premiums(
@@ -148,14 +149,12 @@ def main():
     logger.info(f"2 symbolOptionBybit {symbolOptionBybit}")
     
     #  покупка опциона 
-    # =============================================================
-        # =============================================================
-    
+    # =============================================================  
     logger.warning(f"8. открываем ордер")
     success = clientBybit.chase_order(
         symbol=symbolOptionBybit['symbol'],
         side=symbolOptionBybit['buyOrSell'],
-        qty=500,
+        qty=analytics.selctionQty(),
         price_limit=symbolOptionBybit['premium'],
         check_interval_sec=30,
         slippage_step_pct=1,

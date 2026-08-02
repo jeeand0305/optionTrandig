@@ -503,3 +503,29 @@ def generate_option_grid_premiums(
         'calls_grid': calculated_calls,
         'puts_grid': calculated_puts
     }
+
+
+def selctionQty():
+    """
+    определяемся с объеммом покупки крипты
+    """
+    while True:
+        try:
+            # Запрашиваем ввод, очищаем от пробелов и переводим в верхний регистр
+            qtySize = input(f"Введи объеммом покупки крипты "
+                                    f"(или 'EXIT' для выхода): ").upper()
+            # logger.info(f"{dataTicPrice} {callAndPut}")
+            if qtySize == 'EXIT':
+                logger.info("Выход из программы по требованию пользователя.")
+                return None
+            
+            if float(qtySize):
+                return float(qtySize)
+                
+        except ValueError as err:
+            # Перехватываем нашу ошибку ввода и показываем пользователю, не роняя скрипт
+            logger.warning(f"Ошибка ввода: {err} Пожалуйста, попробуйте еще раз.")
+        except Exception as e:
+            # Перехватываем любые критические непредвиденные ошибки (например, Ctrl+C)
+            logger.error(f"Непредвиденная ошибка при вводе: {e}")
+            
