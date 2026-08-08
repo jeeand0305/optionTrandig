@@ -1080,6 +1080,7 @@ class BybitOptionBot:
                                   base_currency: str, 
                                   side: str, 
                                   qty: float) -> dict:
+
         """
         Открывает фьючерсную позицию (линейный бессрочный контракт) для хеджирования опционов.
         Работает напрямую по API Bybit в обход локального кэша CCXT.
@@ -1136,134 +1137,212 @@ class BybitOptionBot:
         except Exception as e:
             logger.error(f"❌ Критическая ошибка при открытии фьючерсного хеджа для {futures_symbol}: {e}")
             return None
-        
-        
-    def process_hedging_logic(self, buffer_pct: float = 0.005):
+    
+    def get_active_futures_positions(self) -> dict:
         """
-        Шаги 9-13: Контроль рисков для мульти-аккаунтной торговли с единым буфером.
-        Правильно суммирует объемы хеджа, если открыто 2+ опциона по одной монете.
-        :param buffer_pct: Единый процент буфера для всех инструментов (0.005 = 0.5%)
-        """
-        # Шаг 9: Получаем список активных живых опционов вашей функцией
-        active_options = self.get_active_open_options2()
+        Находит все активные открытые фьючерсные позиции (Linear Perpetual USDT) 
+        на аккаунте.
         
-        if not active_options:
-            logger.info("Нет активных опционных позиций для контроля рисков.")
-            return
+        :return: Словарь вида {'BTC': {'side': 'buy', 'size': 0.1},
+        'XRP': {'side': 'sell', 'size': 500}}
+        """
+        logger.info("Сканирование аккаунта на наличие открытых фьючерсов хеджа...")
+        active_futures = {}
 
-        # Словарь для расчета необходимого объема фьючерсов по каждой монете
-        # Формат: {"BTC": {"target_long": 0.0, "target_short": 0.0}}
-        required_hedge = {}
-
-        # ЭТАП 1: Анализируем все опционы и собираем целевые объемы фьючерсов
-        for option in active_options:
-            if option["buyOrSell"] != "sell":
-                continue
-                
-            symbol = option["symbol"]
-            size = option["size"]
+        try:
+            # Запрашиваем позиции Единого аккаунта из сектора linear
+            positions = self.exchange.fetch_positions(params={
+                "category": "linear",
+                "settleCoin": "USDT"
+            })
             
-            try:
-                parts = symbol.split("-")
-                base_coin = parts[0].upper()
-                strike = float(parts[2])
-                opt_type = parts[3].upper()
-            except Exception as e:
-                logger.error(f"Ошибка парсинга параметров символа {symbol}: {e}")
-                continue
+            if isinstance(positions, dict):
+                positions_list = positions.get('result', {}).get('list', [])
+            elif isinstance(positions, list):
+                positions_list = positions
+            else:
+                positions_list = []
 
-            # Шаг 10: Получаем цену спота вашей функцией
-            tick_price = self.get_ticker_by_symbol(base_coin)
-            if not tick_price:
-                continue
+            for pos in positions_list:
+                logger.debug(f"fucher-pos {pos}")
+                symbol = pos.get('symbol', '') # Напр: "XRPUSDT" или "SOLUSDT"
+                try:
+                    contracts = float(pos.get('size', pos.get('contracts', 0.0)))
+                    entryPrice = float(pos.get('entryPrice', ''))
+                    leverage = float(pos.get("leverage", ""))
+                    initialMargin = float(pos.get('initialMargin', ''))
+                except Exception:
+                    contracts = 0.0
 
-            # Инициализируем монету в словаре, если её там еще нет
-            if base_coin not in required_hedge:
-                required_hedge[base_coin] = {"target_long": 0.0, "target_short": 0.0}
+                # ФИЛЬТР ЧИСТОГО ФЬЮЧЕРСА: объем не равен 0, и в названии НЕТ опционных дефисов
+                if contracts != 0 and "-" not in symbol:
+                    # Извлекаем чистый тикер монеты (убираем суффикс 'USDT')
+                    coin = symbol.replace("USDT", "").upper()
+                    
+                    raw_side = pos.get('side', '').lower()
+                    # Приводим к единому стандарту направления сделок
+                    side = 'buy' if raw_side in ['long', 'buy'] else 'sell'
+                    
+                    active_futures[coin[0:-2]] = {
+                        "symbol": symbol,       # "XRPUSDT"
+                        "side": side,           # "buy" (Long) или "sell" (Short)
+                        "size": abs(contracts), # Объем фьючерса
+                        "openPrice": entryPrice, # price sell or buy 
+                        "leverage": leverage, 
+                        "initMargin": initialMargin #count init cach
+                    }
+                    logger.debug(f"🏴‍☠️ Найдена активная фьючерсная позиция: {symbol} | {side.upper()} | Объем: {abs(contracts)}")
 
-            # Рассчитываем триггеры с учетом единого buffer_pct
-            if opt_type == "C":
-                activation_price = strike
-                deactivation_price = strike * (1.0 - buffer_pct)
-                
-                # Если цена выше страйка, нам ОДНОЗНАЧНО нужен лонг фьючерса на этот объем
-                if tick_price >= activation_price:
-                    required_hedge[base_coin]["target_long"] += size
-                # Если цена упала ниже буфера деактивации, этот объем нам больше НЕ нужен
-                elif tick_price < deactivation_price:
-                    pass  # Объем остается 0.0
-                # Если цена внутри буфера, сохраняем текущее состояние (логика гистерезиса)
-                else:
-                    # Проверяем, открыт ли уже какой-то хедж на бирже, чтобы не дергать его внутри буфера
-                    try:
-                        futures_symbol = f"{base_coin}/USDT:USDT"
-                        f_pos = self.exchange.fetch_position(futures_symbol, params={'category': 'linear'})
-                        if f_pos and f_pos.get('side', '').lower() == 'long':
-                            required_hedge[base_coin]["target_long"] += size
-                    except Exception:
-                        pass
-
-            elif opt_type == "P":
-                activation_price = strike
-                deactivation_price = strike * (1.0 + buffer_pct)
-                
-                # Если цена ниже страйка, нам ОДНОЗНАЧНО нужен шорт фьючерса
-                if tick_price <= activation_price:
-                    required_hedge[base_coin]["target_short"] += size
-                # Если цена ушла выше буфера, шорт не нужен
-                elif tick_price > deactivation_price:
-                    pass
-                # Если внутри буфера — удерживаем объем, если он уже был открыт
-                else:
-                    try:
-                        futures_symbol = f"{base_coin}/USDT:USDT"
-                        f_pos = self.exchange.fetch_position(futures_symbol, params={'category': 'linear'})
-                        if f_pos and f_pos.get('side', '').lower() == 'short':
-                            required_hedge[base_coin]["target_short"] += size
-                    except Exception:
-                        pass
-
-        # ЭТАП 2: Сравниваем требуемый объем с реальным на бирже и приводим в соответствие
-        for base_coin, targets in required_hedge.items():
-            futures_symbol = f"{base_coin}/USDT:USDT"
+            logger.info(f"Сканирование завершено. Всего открытых фьючерсов: {len(active_futures)}")
             
-            # Запрашиваем текущую реальную позицию по фьючерсу
-            try:
-                f_pos = self.exchange.fetch_position(futures_symbol, params={'category': 'linear'})
-                current_size = float(f_pos.get('contracts', 0.0)) if f_pos else 0.0
-                f_side = f_pos.get('side', '').lower() if f_pos else 'none'
-            except Exception as e:
-                logger.error(f"Не удалось проверить позицию фьючерса {futures_symbol}: {e}")
+        except Exception as e:
+            logger.error(f"❌ Крах при получении фьючерсных позиций: {e}")
+            
+        return active_futures
+
+        
+        
+    def process_hedging_logic(self, buffer_pct: float = 0.005) -> bool:
+        # nuzno sdelat provercu na nalichie otcritogo fuchersa
+        # i size chtob ponimat skolko docupat fuchrsa
+        # esli fuchers otcrit i on zashishaet position to continue
+        # esli zashls za stryke i no fuchers zashishaem position
+        
+        """
+        Шаги 10, 12, 13 плана: Автоматическое дельта-хеджирование проданных опционов.
+        Полностью обновлено с использованием универсального ядра OptionAsset.
+        
+        :param buffer_pct: Зазор безопасности в долях (0.005 = 0.5%) для защиты от шума на страйке.
+        :return: True если цикл проверок прошел успешно, False при критической ошибке.
+        
+        list_coin = ["btc", "eth", "xrp", "sol", "doge"]
+ 
+
+open_options = [{
+'symbol': 'SOL/USDT:USDT-260807-73-P', 
+'ccxt_symbol': 'SOL/USDT:USDT-260807-73-P', 
+'buyOrSell': 'sell', 
+'size': 2.0, 
+'entry_price': 1.49, 
+'hours_to_expiration': 61.84, 
+'strike': 73.0, 
+'type': 'PUT', 
+
+'futures_symbol': 'SOL/USDT:USDT'}, {'symbol': 'SOL/USDT:USDT-260807-74-C', 
+'ccxt_symbol': 'SOL/USDT:USDT-260807-74-C', 'buyOrSell': 'sell', 'size': 2.0, 
+'entry_price': 1.26, 'hours_to_expiration': 61.84, 'strike': 74.0,
+'type': 'CALL', 'futures_symbol': 'SOL/USDT:USDT'}]
+
+open_futures = {
+    'SOL': {
+        'symbol': 'SOL/USDT:USDT', 
+        'side': 'buy', 
+        'size': 0.3, 
+        }}
+
+    сценарии:
+    0.9. опционый лист сравнивать с наличие фюча 
+    falce
+    1. нет опциону, нет фучерса
+    true 
+    2. нет опциона, фючерс на другой монете
+    true
+    3. нет опциона, фучерс на монете
+    falce 
+    4. option put sell < future  < option coll sell если опцион и фучерс одной монеты 
+    false 
+    5. option put sell > future 
+    true 
+    6. option call sell < future 
+    true
+    7.option size != future size
+    falce 
+        """
+        logger.info(f"⏳ Запуск фонового сканирования рисков портфеля. Буфер защиты: {buffer_pct * 100}%")
+        
+        # Шаг 9: Получаем список всех живых открытых опционов с реального баланса Bybit
+        # Этот метод уже возвращает базово отфильтрованные опционы портфеля
+        listOptions = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE']
+        open_options = self.get_active_open_options3()
+        open_fuctures = self.get_active_futures_positions() #true data
+        logger.info(f"open_options {open_options}"
+                    f"open_futures {open_fuctures}")
+
+        if not open_options:
+            logger.info("ℹ️ На аккаунте нет открытых опционов. Хеджирование не требуется.")
+            return True
+
+        for opt in open_options:
+            # Вытаскиваем исходную сырую строку позиции (напр: XRPUSDT-Options-4AUG26-1.1-C)
+            raw_symbol = opt["symbol"] 
+            buy_or_sell = opt["buyOrSell"]
+            qty = opt["size"] # Объем позиции (всегда положительный float, благодаря abs())
+
+            # Хеджируем ТОЛЬКО проданные (Short / SELL) крылья, так как их риск неограничен!
+            if buy_or_sell != 'sell':
                 continue
 
-            # Разделяем реальный объем на лонг и шорт для удобства сравнения
-            current_long = current_size if f_side == 'long' else 0.0
-            current_short = current_size if f_side == 'short' else 0.0
+            # === СТЫКОВКА С METHOD_SYMBOLS: Мгновенно получаем объект со всеми метаданными ===
+            # Нам больше не нужно резать строки дефисами внутри этой функции!
+            asset = OptionAsset(raw_symbol=raw_symbol, exchange_instance=self.exchange)
 
-            # --- Коррекция ЛОНГ хеджа (для Call опционов) ---
-            if targets["target_long"] > current_long:
-                # Нужно добрать лонг фьючерса
-                diff = targets["target_long"] - current_long
-                logger.warning(f"⚠️ Требуется ЛОНГ хедж по {base_coin}. Добираем объем: {diff}")
-                self.place_futures_hedge_order(base_currency=base_coin, side="buy", qty=diff)
-            elif targets["target_long"] < current_long:
-                # Нужно сократить лонг фьючерса (опцион вышел из денег)
-                diff = current_long - targets["target_long"]
-                logger.info(f"✅ Опцион CALL по {base_coin} вышел из денег/буфера. Закрываем лонг на объем: {diff}")
-                self.place_futures_hedge_order(base_currency=base_coin, side="sell", qty=diff)
+            # --- ШАГ 10: ЗАПРАС ТЕКУЩЕГО СПОТА (ticPrice) ДЛЯ ЭТОЙ МОНЕТЫ ---
+            # Запрашиваем цену базового фьючерса, имя которого (напр. 'XRP/USDT:USDT') объект уже знает
+            try:
+                ticker_info = self.exchange.fetch_ticker(asset.futures_symbol)
+                current_spot_price = float(ticker_info['last'])
+                logger.debug(f" tik price  {current_spot_price}")
+            except Exception as e:
+                logger.error(f"❌ Не удалось получить текущий спот для {asset.futures_symbol}: {e}")
+                continue
 
-            # --- Коррекция ШОРТ хеджа (для Put опционов) ---
-            if targets["target_short"] > current_short:
-                # Нужно добрать шорт фьючерса
-                diff = targets["target_short"] - current_short
-                logger.warning(f"⚠️ Требуется ШОРТ хедж по {base_coin}. Добираем объем: {diff}")
-                self.place_futures_hedge_order(base_currency=base_coin, side="sell", qty=diff)
-            elif targets["target_short"] < current_short:
-                # Нужно сократить шорт фьючерса (опцион вышел из денег)
-                diff = current_short - targets["target_short"]
-                logger.info(f"✅ Опцион PUT по {base_coin} вышел из денег/буфера. Закрываем шорт на объем: {diff}")
-                self.place_futures_hedge_order(base_currency=base_coin, side="buy", qty=diff)
 
+
+            logger.info(f" asset.type, asset.strike, buffer_amount"
+                        f"{asset.coin, asset.type, asset.strike}")
+            # === АНАЛИЗ ДЛЯ ПРОДАННОГО ОПЦИОНА CALL (Защита от пампа/роста рынка) ===
+            logger.debug(f"asset.type == 'CALL'"
+                        f"{asset.type} == C")
+            if asset.type == 'CALL':
+                # Если цена спота улетела выше страйка + буфер
+                logger.info(f"CALL current_spot_price > (asset.strike - buffer_amount)"
+                            f" {current_spot_price} > {asset.strike - buffer_amount}")
+                if current_spot_price > (asset.strike - buffer_amount):
+                    logger.warning(
+                        f"🚨 КРИТИЧЕСКАЯ ЗОНА: Спот {current_spot_price}" 
+                        f"пробил страйк Call {asset.strike}! "
+                        f"Включаем экстренный Long-хедж фьючерсом."
+                    )
+                    # Шаг 11: Открываем Long-фьючерс (используем очищенное имя монеты и объем ноги)
+                    self.place_futures_hedge_order(base_currency=asset.coin, side='buy', qty=qty)
+                else:
+                    logger.info(
+                        f"🟢 Опцион {asset.coin} Call {asset.strike} вне опасности. "
+                        f"Спот: {current_spot_price} (Порог защиты: {round(asset.strike + buffer_amount, 4)})"
+                    )
+
+            # === АНАЛИЗ ДЛЯ ПРОДАННОГО ОПЦИОНА PUT (Защита от дампа/падения рынка) ===
+            elif asset.type == 'PUT':
+                # Если цена спота рухнула ниже страйка - буфер
+                logger.info(f"PUT current_spot_price < (asset.strike + buffer_amount):"
+                            f"{current_spot_price} < {asset.strike + buffer_amount}")
+                if current_spot_price < (asset.strike + buffer_amount):
+                    logger.warning(
+                        f"🚨 КРИТИЧЕСКАЯ ЗОНА: Спот {current_spot_price}"
+                        f" упал ниже страйка Put {asset.strike}! "
+                        f"Включаем экстренный Short-хедж фьючерсом."
+                    )
+                    # Шаг 11: Открываем Short-фьючерс
+                    self.place_futures_hedge_order(base_currency=asset.coin, side='sell', qty=qty)
+                else:
+                    logger.info(
+                        f"🟢 Опцион {asset.coin} Put {asset.strike} вне опасности. "
+                        f"Спот: {current_spot_price} (Порог защиты: {round(asset.strike - buffer_amount, 4)})"
+                    )
+                    
+        return True
+
+    
     def get_active_open_options3(self) -> list:
         """
         УНИВЕРСАЛЬНЫЙ АВТОНОМНЫЙ МЕТОД СБОРА ПОЗИЦИЙ (Шаг 9 плана).
@@ -1299,9 +1378,10 @@ class BybitOptionBot:
 
             # Перебираем каждую позицию, которую Bybit САМА выдала из нашего баланса
             for pos in positions_list:
+                # logger.info(f"pos {pos}")
                 # Биржа сама поставляет нам имя контракта (symbol) и объем (contracts)
                 pos_symbol = pos.get('symbol', '')
-                
+                initMargin = float(pos.get('initialMargin', ''))
                 # В зависимости от версии CCXT объем может лежать в contracts или size
                 try:
                     contracts = float(pos.get('contracts', pos.get('size', 0.0)))
@@ -1335,9 +1415,10 @@ class BybitOptionBot:
                             "hours_to_expiration": round(time_left_hours, 2),
                             "strike": asset.strike,                      # Чистый флоат страйка
                             "type": asset.type,                          # 'C' или 'P'
-                            "futures_symbol": asset.futures_symbol       # Имя фьючерса для хеджа
+                            "futures_symbol": asset.futures_symbol,       # Имя фьючерса для хеджа
+                            "initMargin": initMargin
                         })
-                        logger.info(f"🟢 Успешно взят на контроль опцион: {asset.raw_symbol} | {buy_or_sell.upper()} | Страйк: {asset.strike}")
+                        logger.debug(f"🟢 Успешно взят на контроль опцион: {asset.raw_symbol} | {buy_or_sell.upper()} | Страйк: {asset.strike}")
                         
             logger.info(f"Анализ аккаунта завершен. Живых опционов в портфеле: {len(active_options)}")
             
@@ -1369,7 +1450,7 @@ bybitOpt = BybitOptionBot()
 #     qty=1.0,
 #     price_limit=1.849953599160446,
 #     check_interval_sec=10)
-getD = bybitOpt.get_active_open_options3()
+# getD = bybitOpt.get_active_open_options3()
 # getD = bybitOpt.place_futures_hedge_order(
 #     base_currency='MNT',
 #     side="buy",
@@ -1377,7 +1458,8 @@ getD = bybitOpt.get_active_open_options3()
 # getD = bybitOpt.set_futures_leverage(
 #     base_currency='SOL',
 #     leverage=10)
-# getD = bybitOpt.process_hedging_logic()
+# getD = bybitOpt.get_active_futures_positions()
+getD = bybitOpt.process_hedging_logic()
 
 
 

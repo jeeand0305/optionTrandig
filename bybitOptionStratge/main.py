@@ -144,21 +144,33 @@ def main():
     # ==============================================================
     logger.warning(f" 7. выбираем покупка или продажа опциона")
     logger.debug(f"1 symbolOptionBybit {symbolOptionBybit}")
-    symbolOptionBybit = analytics.selctionBuySell(
-        dataTicStrikePremiumSymbol=symbolOptionBybit )
-    logger.info(f"2 symbolOptionBybit {symbolOptionBybit}")
+    symbolOptionBybit2 = analytics.selctionBuySell(
+        dataTicStrikePremiumSymbol=symbolOptionBybit)
+    logger.info(f"2 symbolOptionBybit {symbolOptionBybit2}")
     
     #  покупка опциона 
     # =============================================================  
     logger.warning(f"8. открываем ордер")
     success = clientBybit.chase_order(
-        symbol=symbolOptionBybit['symbol'],
-        side=symbolOptionBybit['buyOrSell'],
+        symbol=symbolOptionBybit2['symbol'],          # Сделай 'O' большой
+        side=symbolOptionBybit2['buyOrSell'],        # Сделай 'O' большой
         qty=analytics.selctionQty(),
-        price_limit=symbolOptionBybit['premium'],
+        price_limit=symbolOptionBybit2['premium'],    # Сделай 'O' большой
         check_interval_sec=30,
         slippage_step_pct=1,
         max_slippage_pct=20)   
+
+    
+    
+    # logger.warning(f"8. открываем ордер")
+    # success = clientBybit.chase_order(
+    #     symbol=symbolOptionBybit['symbol'],
+    #     side=symbolOptionBybit['buyOrSell'],
+    #     qty=analytics.selctionQty(),
+    #     price_limit=symbolOptionBybit['premium'],
+    #     check_interval_sec=30,
+    #     slippage_step_pct=1,
+    #     max_slippage_pct=20)   
 
     logger.info(f"{success}")
     

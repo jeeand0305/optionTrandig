@@ -352,8 +352,8 @@ def format_date_to_bybit(date_str: str) -> str:
         logger.info(f"Ошибка конвертации даты {date_str}: {e}")
         return ""
 
-def selctionStrike(dataTicStrikePremiumSymbol=dict,
-                   callOrPut='CALL'):
+def selctionStrike(dataTicStrikePremiumSymbol: dict,
+                   callOrPut: str = 'CALL'):
     """
     просим выбрать страйк с указанымии премиями
     от  до 3
@@ -381,8 +381,8 @@ def selctionStrike(dataTicStrikePremiumSymbol=dict,
             # Перехватываем любые критические непредвиденные ошибки (например, Ctrl+C)
             logger.error(f"Непредвиденная ошибка при вводе: {e}")
             
-def selctionBuySell(dataTicStrikePremiumSymbol=dict,
-                   buyOrSell='BUY'):
+def selctionBuySell(dataTicStrikePremiumSymbol: dict,
+                   buyOrSell: str = 'BUY'):
     """
     определяемся с продащей опционов или покупкой buy / sell
     """

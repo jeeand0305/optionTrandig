@@ -25,91 +25,6 @@ class OptionAsset:
             # Если биржи нет под рукой (например, в изолированном тесте) — откатываемся на простой разбор
             self._parse_fallback()
 
-    # def _parse_via_ccxt(self):
-    #     """Сканирует кэш конкретной биржи и находит точные совпадения"""
-    #     parts = self.raw_symbol.split('-')
-        
-    #     if len(parts) == 4:
-    #         base_coin, date_str, strike_str, opt_type = parts
-    #         self.coin = base_coin
-    #         self.strike = float(strike_str)
-    #         self.type = opt_type
-            
-    #         # Сканируем рынки биржи
-    #         for market_symbol, market_data in self.exchange.markets.items():
-    #             # Проверяем, что это опцион
-    #             if market_data.get('option'):
-                    
-    #                 # === МАКСИМАЛЬНАЯ ЗАЩИТА ОТ КРИВЫХ ДАННЫХ КЭША ===
-    #                 try:
-    #                     market_strike = market_data.get('strike')
-    #                     if market_strike is None or market_strike == "":
-    #                         continue
-    #                     market_strike_float = float(market_strike)
-    #                 except (ValueError, TypeError):
-    #                     # Если страйк не конвертируется в число — игнорируем этот контракт
-    #                     continue
-
-    #                 # Проверяем совпадение параметров
-    #                 if (market_data.get('base') == base_coin and 
-    #                     market_strike_float == self.strike and 
-    #                     market_data.get('optionType', '').upper() == opt_type):
-                        
-    #                     self.ccxt_symbol = market_symbol
-                        
-    #                     # Вытаскиваем фьючерс для хеджирования
-    #                     linear_info = market_data.get('linear', {})
-    #                     if isinstance(linear_info, dict) and 'symbol' in linear_info:
-    #                         self.futures_symbol = linear_info['symbol']
-    #                     else:
-    #                         self.futures_symbol = f"{base_coin}/USDT:USDT"
-    #                     return
-            
-    #         # Запасной вариант, если это совершенно новый страйк, которого еще нет в кэше
-    #         self.ccxt_symbol = self.raw_symbol 
-    #         self.futures_symbol = f"{base_coin}/USDT:USDT"
-                        
-    #     else:
-    #         # 2. Если пришла готовая строка CCXT (из fetch_positions)
-    #         self.ccxt_symbol = self.raw_symbol
-    #         market_data = self.exchange.markets.get(self.raw_symbol)
-            
-    #         if market_data:
-    #             self.coin = market_data.get('base', '')
-    #             try:
-    #                 self.strike = float(market_data.get('strike', 0.0))
-    #             except (ValueError, TypeError):
-    #                 self.strike = 0.0
-    #             self.type = market_data.get('optionType', 'C').upper()
-                
-    #             linear_info = market_data.get('linear', {})
-    #             if isinstance(linear_info, dict) and 'symbol' in linear_info:
-    #                 self.futures_symbol = linear_info['symbol']
-    #             else:
-    #                 self.futures_symbol = f"{self.coin}/USDT:USDT"
-    #         else:
-    #             # Наш безотказный парсер-разделитель с конца строки, если прямого ключа нет
-    #             option_parts = self.raw_symbol.split('-')
-    #             if len(option_parts) >= 3:
-    #                 self.type = option_parts[-1].upper()
-    #                 try:
-    #                     self.strike = float(option_parts[-2])
-    #                 except (ValueError, TypeError):
-    #                     self.strike = 0.0
-                    
-    #                 # === ЖЕЛЕЗОБЕТОННОЕ ИСПРАВЛЕНИЕ ТУТ ===
-    #                 raw_base = option_parts[0]  # Напр: "SOL/USDC:USDC"
-    #                 if "/" in raw_base:
-    #                     # Сначала колем по косой черте, забираем ПЕРВЫЙ элемент, и только потом делаем upper()
-    #                     self.coin = raw_base.split('/')[0].upper()
-    #                 else:
-    #                     self.coin = raw_base.upper()
-                        
-    #                 # Собираем правильный кроссплатформенный фьючерс на основе очищенной монеты
-    #                 if "USDC" in self.raw_symbol:
-    #                     self.futures_symbol = f"{self.coin}/USDC:USDC"
-    #                 else:
-    #                     self.futures_symbol = f"{self.coin}/USDT:USDT"
 
     def _parse_via_ccxt(self):
         """
@@ -139,6 +54,8 @@ class OptionAsset:
                 
                 # Сканируем загруженные рынки биржи для поиска нативного CCXT-имени инструмента
                 for market_symbol, market_data in self.exchange.markets.items():
+                    logger.info(f"market symbol {market_symbol}")
+                    logger.info(f"market data {market_data}")
                     if market_data.get('option'):
                         try:
                             market_strike = market_data.get('strike')
