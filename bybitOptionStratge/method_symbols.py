@@ -22,7 +22,8 @@ class OptionAsset:
         if self.exchange and hasattr(self.exchange, 'markets') and self.exchange.markets:
             self._parse_via_ccxt()
         else:
-            # Если биржи нет под рукой (например, в изолированном тесте) — откатываемся на простой разбор
+            # Если биржи нет под рукой (например, в изолированном тесте)
+            # — откатываемся на простой разбор
             self._parse_fallback()
 
 
@@ -135,55 +136,142 @@ class OptionAsset:
         self.type = parts[-1]
         self.strike = float(parts[-2]) if len(parts) >= 2 else 0.0
         self.ccxt_symbol = self.raw_symbol
+        
+    
+    def fetch_open_size(self) -> float:
+        """
+        Запрашивает с биржи размер текущей открытой позиции по данному опциону.
+        Возвращает:
+            float: Положительное число для BUY (Long), 
+                   Отрицательное число для SELL (Short),
+                   0.0 если позиции нет или закрыта.
+        """
+        if not self.exchange:
+            logger.error(f"Невозможно получить позицию для {self.raw_symbol}: экземпляр биржи не передан.")
+            return 0.0
+            
+        try:
+            # Убеждаемся, что мы используем правильный стандартизированный символ CCXT
+            symbol_to_fetch = self.ccxt_symbol if self.ccxt_symbol else self.raw_symbol
+            
+            # Подгружаем балансы/позиции. fetch_positions обычно эффективнее, 
+            # так как некоторые биржи не поддерживают fetch_position по одному символу.
+            positions = self.exchange.fetch_positions([symbol_to_fetch])
+            
+            if not positions:
+                logger.info(f"Нет открытых позиций по символу {symbol_to_fetch}")
+                return 0.0
+                
+            for pos in positions:
+                # Сверяем символ на всякий случай
+                if pos.get('symbol') == symbol_to_fetch:
+                    # В CCXT стандартизированный объем позиции лежит в 'contracts'
+                    # 'side' показывает 'long' или 'short'
+                    contracts = pos.get('contracts')
+                    
+                    if contracts is None:
+                        # Резервный вариант, если биржа отдала старый формат ('size')
+                        contracts = float(pos.get('info', {}).get('size', 0.0))
+                        return contracts
+                    else:
+                        contracts = float(contracts)
+                        return contracts
+                        
+                    side = pos.get('side', '').lower()
+                    
+                    # Если позиция нулевая
+                    if contracts == 0.0:
+                        return 0.0
+                        
+
+            return 0.0
+            
+        except Exception as e:
+            logger.error(f"Ошибка при получении размера позиции для {self.raw_symbol}: {e}")
+            return 0.0
+        
+    
+    def fetch_initial_margin(self) -> float:
+        """
+        Запрашивает размер начальной маржи (Initial Margin) для текущей позиции по опциону.
+        Возвращает: float (размер маржи, всегда >= 0.0).
+        """
+        if not self.exchange:
+            logger.error(f"Не передан экземпляр биржи для {self.raw_symbol}")
+            return 0.0
+            
+        try:
+            symbol_to_fetch = self.ccxt_symbol if self.ccxt_symbol else self.raw_symbol
+            positions = self.exchange.fetch_positions([symbol_to_fetch])
+            
+            for pos in positions:
+                if pos.get('symbol') == symbol_to_fetch:
+                    # CCXT стандартизирует это поле как 'initialMargin'
+                    margin = pos.get('initialMargin')
+                    
+                    if margin is not None:
+                        return float(margin)
+                    
+                    # Резервный вариант, если конкретная биржа отдала маржу глубоко внутри 'info'
+                    info_margin = pos.get('info', {}).get('initialMargin') or pos.get('info', {}).get('maintMargin')
+                    return float(info_margin) if info_margin else 0.0
+                        
+            return 0.0
+            
+        except Exception as e:
+            logger.error(f"Ошибка при получении начальной маржи для {self.raw_symbol}: {e}")
+            return 0.0
+
+
 
 
 # === БЛОК ТЕСТИРОВАНИЯ ДЛЯ ТВОЕГО ПК ===
-# if __name__ == "__main__":
-#     print("🤖 Инициализируем проверки автоматического подбора...")
+if __name__ == "__main__":
+    print("🤖 Инициализируем проверки автоматического подбора...")
     
-#     # Создаем тестовый инстанс Bybit БЕЗ ключей config (для load_markets они не нужны)
-#     test_exchange = ccxt.deribit({
-#         'enableRateLimit': True,
-#         'options': {
-#             'defaultType': 'option' # Указываем, что работаем с опционами
-#         }
-#     })
+    # Создаем тестовый инстанс Bybit БЕЗ ключей config (для load_markets они не нужны)
+    test_exchange = ccxt.deribit({
+        'enableRateLimit': True,
+        'options': {
+            'defaultType': 'option' # Указываем, что работаем с опционами
+        }
+    })
     
-#     print(f"⏳ Скачиваем актуальную сетку опционов с биржи"
-#           f"(это может занять пару секунд)...")
-#     try:
-#         test_exchange.load_markets()
-#         print("✅ Рынки успешно загружены в память!")
-#     except Exception as e:
-#         print(f"❌ Ошибка подключения к бирже: {e}")
-#         exit()
+    print(f"⏳ Скачиваем актуальную сетку опционов с биржи"
+          f"(это может занять пару секунд)...")
+    try:
+        test_exchange.load_markets()
+        print("✅ Рынки успешно загружены в память!")
+    except Exception as e:
+        print(f"❌ Ошибка подключения к бирже: {e}")
+        exit()
 
-#     print("\n--- ТЕСТ 1: Входной символ от твоей математики ---")
-#     # Допустим, твоя математика посчитала опцион на SOL или BTC (берем август, так как июль уже прошел)
-#     # Пример формата: "SOL-28AUG26-70-P" (проверь актуальные даты на бирже, если пустой)
-#     math_symbol = "DOGE-07AUG26-70-P" 
+    print("\n--- ТЕСТ 1: Входной символ от твоей математики ---")
+    # Допустим, твоя математика посчитала опцион на SOL или BTC (берем август, так как июль уже прошел)
+    # Пример формата: "SOL-28AUG26-70-P" (проверь актуальные даты на бирже, если пустой)
+    math_symbol = "DOGE-07AUG26-70-P" 
     
-#     print(f"Подаем на вход: {math_symbol}")
-#     asset1 = OptionAsset(raw_symbol=math_symbol, 
-#                          exchange_instance=test_exchange)
+    print(f"Подаем на вход: {math_symbol}")
+    asset1 = OptionAsset(raw_symbol=math_symbol, 
+                         exchange_instance=test_exchange)
     
-#     print(f"1. Нашли в кэше CCXT:  {asset1.ccxt_symbol}")
-#     print(f"2. Очищенная монета:  {asset1.coin}")
-#     print(f"3. Число страйка:     {asset1.strike} (Тип: {type(asset1.strike).__name__})")
-#     print(f"4. Тип опциона:       {asset1.type}")
-#     print(f"5. Символ фьючерса:   {asset1.futures_symbol}")
+    print(f"1. Нашли в кэше CCXT:  {asset1.ccxt_symbol}")
+    print(f"2. Очищенная монета:  {asset1.coin}")
+    print(f"3. Число страйка:     {asset1.strike} (Тип: {type(asset1.strike).__name__})")
+    print(f"4. Тип опциона:       {asset1.type}")
+    print(f"5. Символ фьючерса:   {asset1.futures_symbol}")
     
-#     print("-" * 50)
+    print("-" * 50)
 
-#     print("\n--- ТЕСТ 2: Входной символ из fetch_positions (CCXT формат) ---")
-#     pos_symbol = "DOGE/USDT:USDT-260807-70-P"
-#     print(f"Подаем на вход из баланса: {pos_symbol}")
+    print("\n--- ТЕСТ 2: Входной символ из fetch_positions (CCXT формат) ---")
+    pos_symbol = "DOGE/USDT:USDT-260807-70-P"
+    print(f"Подаем на вход из баланса: {pos_symbol}")
     
-#     asset2 = OptionAsset(raw_symbol=pos_symbol, exchange_instance=test_exchange)
-#     print(f"1. Распознан как CCXT: {asset2.ccxt_symbol}")
-#     print(f"2. Очищенная монета:  {asset2.coin}")
-#     print(f"3. Число страйка:     {asset2.strike}")
-#     print(f"4. Тип опциона:       {asset2.type}")
-#     print(f"5. Символ фьючерса:   {asset2.futures_symbol}")
-#     print("-" * 50)
+    asset2 = OptionAsset(raw_symbol=pos_symbol, exchange_instance=test_exchange)
+    print(f"1. Распознан как CCXT: {asset2.ccxt_symbol}")
+    print(f"2. Очищенная монета:  {asset2.coin}")
+    print(f"3. Число страйка:     {asset2.strike}")
+    print(f"4. Тип опциона:       {asset2.type}")
+    print(f"5. Символ фьючерса:   {asset2.futures_symbol}")
+    print("-" * 50)
 

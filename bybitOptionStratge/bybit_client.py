@@ -1,3 +1,18 @@
+import sys
+import os
+
+# Находим путь к корневой директории всего проекта (ProjectOption)
+# os.path.abspath(__file__) дает путь к bybit_client.py
+# Первый dirname дает папку bybitOptionStratge, второй dirname дает ProjectOption
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Добавляем корень проекта в список путей поиска модулей Python
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
+# ТВОИ ОРИГИНАЛЬНЫЕ ИМПОРТЫ ТЕПЕРЬ СРАБОТАЮТ ВСЕГДА:
+from logger import logger
+from bybitOptionStratge.method_symbols import OptionAsset
 import ccxt 
 import os
 import time
@@ -5,7 +20,9 @@ import time
 from datetime import datetime
 from logger import logger
 from dotenv import load_dotenv
-from method_symbols import OptionAsset
+# from bybitOptionStratege.method_symbols import OptionAsset
+from bybitOptionStratge.method_symbols import OptionAsset
+
 
 # COD WORK result list close candale days
 
@@ -1218,46 +1235,48 @@ class BybitOptionBot:
         list_coin = ["btc", "eth", "xrp", "sol", "doge"]
  
 
-open_options = [{
-'symbol': 'SOL/USDT:USDT-260807-73-P', 
-'ccxt_symbol': 'SOL/USDT:USDT-260807-73-P', 
-'buyOrSell': 'sell', 
-'size': 2.0, 
-'entry_price': 1.49, 
-'hours_to_expiration': 61.84, 
-'strike': 73.0, 
-'type': 'PUT', 
+        open_options = [{
+        'symbol': 'SOL/USDT:USDT-260807-73-P', 
+        'ccxt_symbol': 'SOL/USDT:USDT-260807-73-P', 
+        'buyOrSell': 'sell', 
+        'size': 2.0, 
+        'entry_price': 1.49, 
+        'hours_to_expiration': 61.84, 
+        'strike': 73.0, 
+        'type': 'PUT', 
 
-'futures_symbol': 'SOL/USDT:USDT'}, {'symbol': 'SOL/USDT:USDT-260807-74-C', 
-'ccxt_symbol': 'SOL/USDT:USDT-260807-74-C', 'buyOrSell': 'sell', 'size': 2.0, 
-'entry_price': 1.26, 'hours_to_expiration': 61.84, 'strike': 74.0,
-'type': 'CALL', 'futures_symbol': 'SOL/USDT:USDT'}]
+        'futures_symbol': 'SOL/USDT:USDT'}, {'symbol': 'SOL/USDT:USDT-260807-74-C', 
+        'ccxt_symbol': 'SOL/USDT:USDT-260807-74-C', 'buyOrSell': 'sell', 'size': 2.0, 
+        'entry_price': 1.26, 'hours_to_expiration': 61.84, 'strike': 74.0,
+        'type': 'CALL', 'futures_symbol': 'SOL/USDT:USDT'}]
 
-open_futures = {
-    'SOL': {
-        'symbol': 'SOL/USDT:USDT', 
-        'side': 'buy', 
-        'size': 0.3, 
-        }}
+        open_futures = {
+            'SOL': {
+                'symbol': 'SOL/USDT:USDT', 
+                'side': 'buy', 
+                'size': 0.3, 
+                }}
 
-    сценарии:
-    0.9. опционый лист сравнивать с наличие фюча 
-    falce
-    1. нет опциону, нет фучерса
-    true 
-    2. нет опциона, фючерс на другой монете
-    true
-    3. нет опциона, фучерс на монете
-    falce 
-    4. option put sell < future  < option coll sell если опцион и фучерс одной монеты 
-    false 
-    5. option put sell > future 
-    true 
-    6. option call sell < future 
-    true
-    7.option size != future size
-    falce 
-        """
+            сценарии:
+            0.9. опционый лист сравнивать с наличие фюча 
+            falce
+            1. нет опциону, нет фучерса
+            true 
+            2. нет опциона, фючерс на другой монете
+            true
+            3. нет опциона, фучерс на монете
+            falce 
+            4. option put sell < future  < option coll sell если опцион и фучерс одной монеты 
+            false 
+            5. option put sell > future 
+            true 
+            6. option call sell < future 
+            true
+            7.option size != future size
+            falce 
+                """
+        dictOptions = {}
+        
         logger.info(f"⏳ Запуск фонового сканирования рисков портфеля. Буфер защиты: {buffer_pct * 100}%")
         
         # Шаг 9: Получаем список всех живых открытых опционов с реального баланса Bybit
@@ -1288,6 +1307,8 @@ open_futures = {
 
             # --- ШАГ 10: ЗАПРАС ТЕКУЩЕГО СПОТА (ticPrice) ДЛЯ ЭТОЙ МОНЕТЫ ---
             # Запрашиваем цену базового фьючерса, имя которого (напр. 'XRP/USDT:USDT') объект уже знает
+            
+            
             try:
                 ticker_info = self.exchange.fetch_ticker(asset.futures_symbol)
                 current_spot_price = float(ticker_info['last'])
@@ -1306,8 +1327,8 @@ open_futures = {
             if asset.type == 'CALL':
                 # Если цена спота улетела выше страйка + буфер
                 logger.info(f"CALL current_spot_price > (asset.strike - buffer_amount)"
-                            f" {current_spot_price} > {asset.strike - buffer_amount}")
-                if current_spot_price > (asset.strike - buffer_amount):
+                            f" {current_spot_price} > {asset.strike}")
+                if current_spot_price > (asset.strike):
                     logger.warning(
                         f"🚨 КРИТИЧЕСКАЯ ЗОНА: Спот {current_spot_price}" 
                         f"пробил страйк Call {asset.strike}! "
@@ -1318,15 +1339,15 @@ open_futures = {
                 else:
                     logger.info(
                         f"🟢 Опцион {asset.coin} Call {asset.strike} вне опасности. "
-                        f"Спот: {current_spot_price} (Порог защиты: {round(asset.strike + buffer_amount, 4)})"
+                        f"Спот: {current_spot_price} (Порог защиты: {round(asset.strike , 4)})"
                     )
 
             # === АНАЛИЗ ДЛЯ ПРОДАННОГО ОПЦИОНА PUT (Защита от дампа/падения рынка) ===
             elif asset.type == 'PUT':
                 # Если цена спота рухнула ниже страйка - буфер
                 logger.info(f"PUT current_spot_price < (asset.strike + buffer_amount):"
-                            f"{current_spot_price} < {asset.strike + buffer_amount}")
-                if current_spot_price < (asset.strike + buffer_amount):
+                            f"{current_spot_price} < {asset.strike}")
+                if current_spot_price < (asset.strike ):
                     logger.warning(
                         f"🚨 КРИТИЧЕСКАЯ ЗОНА: Спот {current_spot_price}"
                         f" упал ниже страйка Put {asset.strike}! "
@@ -1337,13 +1358,13 @@ open_futures = {
                 else:
                     logger.info(
                         f"🟢 Опцион {asset.coin} Put {asset.strike} вне опасности. "
-                        f"Спот: {current_spot_price} (Порог защиты: {round(asset.strike - buffer_amount, 4)})"
+                        f"Спот: {current_spot_price} (Порог защиты: {round(asset.strike, 4)})"
                     )
                     
         return True
 
     
-    def get_active_open_options3(self) -> list:
+    def get_active_open_options3(self) -> dict:
         """
         УНИВЕРСАЛЬНЫЙ АВТОНОМНЫЙ МЕТОД СБОРА ПОЗИЦИЙ (Шаг 9 плана).
         
@@ -1355,6 +1376,9 @@ open_futures = {
 
         logger.info("Запуск проверки открытых, неэкспирированных и живых опционов...")
         active_options = []
+        list_active_option = []
+        total_active_option = {}
+        
         
         try:
             current_timestamp = self.exchange.milliseconds()
@@ -1368,6 +1392,7 @@ open_futures = {
                 "settleCoin": "USDT"
             })
             
+            logger.debug(f"postions {positions}")
             # ЖЕЛЕЗОБЕТОННЫЙ ПРЕДОХРАНИТЕЛЬ: Bybit может вернуть как список, так и словарь
             if isinstance(positions, dict):
                 positions_list = positions.get('result', {}).get('list', [])
@@ -1419,16 +1444,58 @@ open_futures = {
                             "initMargin": initMargin
                         })
                         logger.debug(f"🟢 Успешно взят на контроль опцион: {asset.raw_symbol} | {buy_or_sell.upper()} | Страйк: {asset.strike}")
-                        
+                         
             logger.info(f"Анализ аккаунта завершен. Живых опционов в портфеле: {len(active_options)}")
             
         except Exception as e:
             logger.error(f"Критическая ошибка при сканировании позиций Bybit: {e}")
+        
+        active_optionsDict = self.separate(listData=active_options)    
+        return active_optionsDict
+    
+    def separate(self, listData: list) -> dict:
+        # 1. Создаем финальный пустой словарь портфеля
+        portfolio_dict = {}
+
+        # 2. Бежим циклом по входящему плоскому списку
+        for data_ in listData:
             
-        return active_options
+                        # Шаг 1: Извлекаем сырые данные без подмен (по дефолту везде возвращается None)
+            raw_symbol = data_.get('symbol', None)
+            raw_strike = data_.get('strike', None)
+            raw_size   = data_.get('size', None)
+            
+            # Проверяем оба возможных ключа направления, которые может вернуть биржа/парсер
+            raw_side   = data_.get('buyOrSell', data_.get('side', None))
+
+            # Шаг 2: ЕДИНЫЙ БАРЬЕР БЕЗОПАСНОСТИ СТРОГО ЧЕРЕЗ 'is None' (Guard Clause)
+            # Если хотя бы одно из четырех критических полей равно None — контракт бракуется
+            if raw_symbol is None or raw_strike is None or raw_size is None or raw_side is None:
+                logger.error(
+                    f"❌ [ОТБРАКОВКА] Обнаружен None в критических полях опциона! "
+                    f"Symbol: {raw_symbol} | Strike: {raw_strike} | Size: {raw_size} | Side: {raw_side}. Пропуск контракта."
+                )
+                continue  # Мгновенно сбрасываем контракт, код не идет дальше и не падает!
+
+            # === ИСПОЛЬЗУЕМ КЛАСС OptionAsset ДЛЯ ИЗВЛЕЧЕНИЯ МОНЕТЫ ===
+            asset = OptionAsset(raw_symbol=data_["symbol"], exchange_instance=self.exchange)
+
+            # Получаем чистое имя монеты из свойства asset.coin
+            coin_key = asset.coin.upper().strip()
+
+            # --- УСЛОВНЫЙ ОПЕРАТОР: Инициализация ключа монеты ---
+            # Если этой папки-монеты еще нет в словаре, создаем для нее пустой list[]
+            if coin_key not in portfolio_dict:
+                portfolio_dict[coin_key] = []
+
+            # --- СБОРКА ---
+            # Добавляем опцион в список ЕГО монеты (и buy, и sell)
+            portfolio_dict[coin_key].append(data_)
+        logger.debug(f"{portfolio_dict}")
+        return portfolio_dict
 
         
-bybitOpt = BybitOptionBot()
+# bybitOpt = BybitOptionBot()
 
 #  getD = bybitOpt.get_historical_closes_candals("DOGE")
 #  getD = bybitOpt.fetch_option_market_data('BTC')
@@ -1459,9 +1526,9 @@ bybitOpt = BybitOptionBot()
 #     base_currency='SOL',
 #     leverage=10)
 # getD = bybitOpt.get_active_futures_positions()
-getD = bybitOpt.process_hedging_logic()
+# getD = bybitOpt.process_hedging_logic()
 
 
 
-logger.info(f"{getD}")
+# logger.info(f"{getD}")
 

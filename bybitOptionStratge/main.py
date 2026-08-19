@@ -1,11 +1,22 @@
-import analytics
-import bybit_client
-import configBybit
+import sys
 import os
+
+# Находим путь к корневой директории ProjectOption
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
+
+# Теперь твои оригинальные импорты сработают без ошибок!
+import bybit_client
+
+
+import analytics
+import configBybit
 import time
 from logger import logger
 import ccxt
 from dotenv import load_dotenv
+
 
 # =====================================================================
 # ЭТАП 1: НАСТРОЙКА ОКРУЖЕНИЯ И ЛОГИРОВАНИЯ
