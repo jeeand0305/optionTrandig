@@ -1493,6 +1493,391 @@ class BybitOptionBot:
             portfolio_dict[coin_key].append(data_)
         logger.debug(f"{portfolio_dict}")
         return portfolio_dict
+    
+    
+    def execute_hedge_adjustment(self, nameCoin: str, target_side: str, delta: float):
+        """
+        УНИВЕРСАЛЬНЫЙ ИСПОЛНИТЕЛЬ ОРДЕРОВ (Шаг 11 плана):
+        Принимает монету, целевую сторону защиты (buy/sell) и рассчитанную дельту объемов.
+        Самостоятельно принимает решение: добрать позицию или частично сократить излишек.
+        """
+        # Округляем дельту до 4 знаков (защита от биржевого микро-мусора в плавающей точке)
+        delta = round(delta, 4)
+        
+        # Если дельта после округления равна нулю — никаких действий на бирже не требуется
+        if delta == 0.0:
+            return
+
+        # Приводим целевую сторону к нижнему регистру для стандартизации протокола CCXT
+        clean_target_side = target_side.lower().strip()
+
+        # --- ВНЕШНИЙ ТЕХНИЧЕСКИЙ ЩИТ ДЛЯ ЗАЩИТЫ ОТ СБОЕВ API БИРЖИ ---
+        try:
+            # === СЦЕНАРИЙ 1: ДЕЛЬТА ПОЛОЖИТЕЛЬНАЯ (НЕХВАТКА ОБЪЕМА ХЕДЖА) ===
+            # Нам необходимо ДОКУПИТЬ фьючерсы в ту же сторону, куда направлен риск
+            if delta > 0:
+                logger.warning(
+                    f"⚡ [ОРДЕР ДОБОРА] Нехватка хэджа по монете {nameCoin}! "
+                    f"Отправляем рыночный приказ {clean_target_side.upper()} на объем: {delta}"
+                )
+                
+                # Твой вызов CCXT для отправки рыночного ордера на добор:
+                # self.place_market_order(symbol=nameCoin, side=clean_target_side, qty=delta)
+
+            # === СЦЕНАРИЙ 2: ДЕЛЬТА ОТРИЦАТЕЛЬНАЯ (ИЗЛИШЕК / ПЕРЕХЕДЖ) ===
+            # Математика зафиксировала лишние фьючерсы. Нам нужно ЧАСТИЧНО СОКРАТИТЬ позицию
+            elif delta < 0:
+                # Переводим отрицательное значение дельты в чистый модуль объема для ордера
+                actual_qty = abs(delta)
+                
+                # --- УСЛОВНЫЕ ОПЕРАТОРЫ ПЕРЕВОРОТА НАПРАВЛЕНИЯ ДЛЯ ЗАКРЫТИЯ ---
+                # Если целевая сторона хэджа LONG (buy), то закрывать излишек нужно ордером SELL
+                if clean_target_side == 'buy':
+                    order_side = 'sell'
+                # Если целевая сторона хэджа SHORT (sell), то закрывать излишек нужно ордером BUY
+                elif clean_target_side == 'sell':
+                    order_side = 'buy'
+                else:
+                    logger.error(f"❌ Критическая аномалия направления clean_target_side: {clean_target_side}")
+                    return
+
+                logger.info(
+                    f"⚡ [ОРДЕР СОКРАЩЕНИЯ] Зафиксирован перехедж по монете {nameCoin}! "
+                    f"Отправляем рыночный приказ {order_side.upper()} на частичное закрытие объема: {actual_qty}"
+                )
+                
+                # Твой вызов CCXT для отправки встречного ордера на сокращение:
+                # self.place_market_order(symbol=nameCoin, side=order_side, qty=actual_qty)
+
+        except Exception as order_error:
+            # Если Bybit отклонит ордер (Rate Limit, Margin Call) — блок except удержит робота на плаву
+            logger.error(f"💥 Критический сбой API при исполнении хэдж-ордера по {nameCoin}: {order_error}")
+
+
+    
+    # no Test  
+    def analizCallStrike0(self, optionsSellCall: list, nameCoin: str):
+        analizCallBool = True
+        """
+        ЗАЩИТА CALL-НОГИ: Анализирует риски роста рынка выше страйка.
+        """
+        # Если при роллировании на аккаунте временно нет 
+        # CALL-опционов — выходим
+        if not optionsSellCall:
+            return
+
+        # Нам нужен минимальный страйк (ближайший рубеж обороны)
+        # Мы его уже умеем искать без жестких индексов
+        call_strike = float('inf')
+        total_call_size = 0.0
+        for call_opt in optionsSellCall:
+            call_strike = min(call_strike, float(call_opt.get('strike', float('inf'))))
+            total_call_size += float(call_opt.get('size', 0.0))
+
+        ticPrice = self.ticPrice
+        open_futures = self.futures.get(nameCoin)
+        
+        
+
+        # --- УСЛОВНЫЙ ОПЕРАТОР: Пробит ли страйк CALL вверх? ---
+        if call_strike < ticPrice:
+            logger.warning(f"🚨 [CALL RISK] Цена {ticPrice} "
+                           f" выше страйка CALL {call_strike}"
+                           f" ! Требуется LONG хедж.")
+            
+            if open_futures:
+                delta_OptAndFutu = open_futures['size'] - optionsSellCall['size'] 
+                if call_strike < open_futures['openPrice'] < ticPrice:
+                    analizCallBool = False
+                    return analizCallBool
+                    
+                elif call_strike < ticPrice < open_futures['openPrice']:
+                    logger.error(f" 1. close open futuers {open_futures}"
+                                 f" open new Futures po luchey price")
+                    analizCallBool = False
+                    return analizCallBool
+                
+                else: 
+                    logger.error(f"1 ne validnie danie"
+                                 f"2 ne ponythnaya problema")                
+                
+            
+            # Сценарий А: Фьючерса на аккаунте нет совсем — ОТКРЫВАЕМ С НУЛЯ
+            elif open_futures is None:
+                logger.error(f"➕ Открываем НОВЫЙ фьючерс BUY на"
+                             f" объем {total_call_size}")
+                # [Вызов ордера на покупку всего объема total_call_size]
+                
+            # Сценарий Б: Фьючерс уже есть — сравниваем объемы
+            else:
+                fut_size = float(open_futures.get('size', 0.0))
+                fut_side = open_futures.get('side', '').lower()
+                
+                # Если фьючерс стоит в BUY, проверяем дельту (хватает ли объема?)
+                if fut_side == 'buy':
+                    delta = total_call_size - fut_size
+                    if delta > 0:
+                        logger.warning(f"⚡ Нехватка хеджа! Докупаем фьючерс BUY на объем: {delta}")
+                        # [Вызов ордера на дозакупку дельты]
+                    elif delta < 0:
+                        logger.info(f"⚡ Перехедж! Сбрасываем лишний фьючерс SELL на объем: {abs(delta)}")
+                        # [Вызов ордера на частичное закрытие излишка]
+
+    
+#  notest   
+    def analizCoridorStrikes0(self, 
+                             optinsList: list,
+                             nameCoin: str):
+        '''
+        1. proveryaem o nalichie ticPrice v coridore
+        esli TRUE . proveryem futures esli OPEN futures close zacrivem TRUE and TRUE
+        2. proveryem o nalichie 
+        
+        '''
+        optionsSellPut = []
+        optionsSellCall = [] 
+        dictPutSellAnaliz = {}
+        total_call_size = 0.0
+        total_put_size = 0.0
+        
+        open_futures = self.futures.get(nameCoin)
+        # ticPrice = self.ticPrice pod zamenu
+        ticPrice = float(input(f"input tic price coin {nameCoin} :")) 
+        
+        for option in optinsList:
+            if option.get('symbol') is None:
+                continue
+            
+            asset = OptionAsset(raw_symbol=option["symbol"], 
+                                exchange_instance=self.exchange)
+            
+            if option.get('buyOrSell', '').lower() == 'sell':
+                asset_type = asset.type.upper().strip()
+                
+                # Исправлено: безопасное разделение по типам без IndexError
+                if "PUT" in asset_type or asset_type.startswith('P'):
+                    optionsSellPut.append(option)
+                    total_put_size += float(option.get('size', 0.0))
+                    
+                elif "CALL" in asset_type or asset_type.startswith('C'):
+                    optionsSellCall.append(option)
+                    total_call_size += float(option.get('size', 0.0))
+        
+        dictPutSellAnaliz['optSellCall'] = optionsSellCall
+        dictPutSellAnaliz['optSellPut'] = optionsSellPut
+        
+        # logger.info(f" dictPutSellAnaliz {dictPutSellAnaliz} ")
+        # =====================================================================
+        # КУСОК 2: ИТЕРАЦИОННЫЙ РАСЧЕТ ГРАНИЦ КОРРИДОРА (ЗАЩИТА РОЛЛИРОВАНИЯ)
+        # =====================================================================
+        
+        # Находим МАКСИМАЛЬНЫЙ страйк среди проданных PUT (нижняя граница риска)
+        # Если при роллировании список пуст — put_strike останется 0.0 (код не упадет)
+        put_strike = 0.0
+        for put_opt in optionsSellPut:
+            put_strike = max(put_strike, float(put_opt.get('strike', 0.0)))
+            
+        # Находим МИНИМАЛЬНЫЙ страйк среди проданных CALL (верхняя граница риска)
+        # Если при роллировании список пуст — call_strike останется бесконечностью
+        call_strike = float('inf')
+        for call_opt in optionsSellCall:
+            call_strike = min(call_strike, float(call_opt.get('strike', float('inf'))))
+        logger.info(f" put_strike {put_strike}"
+                    f" call_strike {call_strike}")   
+        
+        # Возвращаем верхнюю заглушку в безопасное числовое состояние
+        if call_strike == float('inf'):
+            call_strike = 999999.0
+        
+        # =====================================================================
+        # КУСОК 3: МАТЕМАТИЧЕСКИЕ СЦЕНАРИИ С ПРАВИЛЬНЫМИ ФЛАГАМИ ТРЕВОГИ
+        # =====================================================================
+
+                # === ТОЧЕЧНЫЙ АНАЛИЗ ВЫВЕРНУТОГО КОРРИДОРА (PUT > CALL) ===
+        if put_strike > call_strike:
+            logger.warning(f"⚠️ [ИНВЕРСИЯ СТРАЙКОВ] По монете {nameCoin} "
+                           f" вывернут коридор: {put_strike} > {call_strike}")
+            
+            # Вычисляем математическую середину 
+            mid_price = (put_strike + call_strike) / 2  # (101 + 99) / 2 = 100
+            
+            # Собираем актуальные данные по открытому фьючерсу (наш технический щит)
+            fut_size = 0.0
+            fut_side = 'none'
+            if open_futures:
+                fut_size = float(open_futures.get('size', 0.0))
+                fut_side = open_futures.get('side', '').lower().strip()
+
+            # --- ВЕТВЛЕНИЕ ОТНОСИТЕЛЬНО СЕРЕДИНЫ С УЧЕТОМ ОБЪЕМОВ ---
+            if ticPrice > mid_price:
+                # Зона 100+: Целевой хэдж должен быть строго BUY (LONG)
+                # Берем суммарный объем всех проданных CALL опционов
+                target_qty = total_call_size 
+                delta = target_qty - fut_size if fut_side == 'buy' else target_qty
+                
+                # work posle pernosav bybit_client
+                # self.execute_hedge_adjustment(
+                #     nameCoin=nameCoin, 
+                #     target_side='buy',
+                #     delta=delta)
+                
+                dictPutSellAnaliz['analizeBool'] = False
+                return dictPutSellAnaliz
+                
+               
+            # Если фьючерса нет или он стоит в противоположную сторону (SELL)
+            elif ticPrice < mid_price:
+                target_qty = total_put_size
+                # Дельта равна target_qty, а исполнитель сам закроет старый SELL (шорт)
+                delta = target_qty - fut_size if fut_side == 'sell' else target_qty
+            
+                # Отправляем рассчитанную дельту в наш универсальный исполнитель
+                # self.execute_hedge_adjustment(nameCoin=nameCoin, target_side='sell', delta=delta)
+
+                dictPutSellAnaliz['analizeBool'] = False # Сами всё исполнили, в главные подфункции не пускаем
+                return dictPutSellAnaliz
+                
+            else:
+                # Зона <100: Целевой хэдж должен быть строго SELL (SHORT)
+                target_qty = total_put_size
+                
+                # Если фьючерс уже стоит в SELL — считаем разницу
+                if fut_side == 'sell':
+                    delta = target_qty - fut_size
+                else:
+                    delta = target_qty
+                    
+                self.execute_hedge_adjustment(nameCoin=nameCoin, target_side='sell', delta=delta)
+                
+                dictPutSellAnaliz['analizeBool'] = False
+                return dictPutSellAnaliz
+            
+         
+    def aggregate_coin_data0(self, optinsList: list, nameCoin: str) -> dict:
+        """
+        ФУНКЦИЯ-АГРЕГАТОР (Версия 4.0 — Максимальная оптимизация):
+        Строго за ОДИН проход по списку собирает массивы ног, накапливает общие объёмы,
+        находит критические страйки и формирует эталонный паспорт данных монеты coin_data.
+        """
+        optionsSellPut = []
+        optionsSellCall = []
+        total_call_size = 0.0
+        total_put_size = 0.0
+        
+        # Стартовые маркеры для поиска страйков «на лету» внутри единого цикла
+        put_strike = 0.0
+        call_strike = float('inf')
+
+        # =====================================================================
+        # 🔥 ВСЁ В ОДИН ПРОХОД: СБОР НОГ, ОБЪЁМОВ И СТРАЙКОВ ОДНОВРЕМЕННО 🔥
+        # =====================================================================
+        for option in optinsList:
+            # Защитный барьер (Guard Clause): отсекаем битый мусор API Bybit
+            if option.get('symbol') is None:
+                continue
+
+            # Инициализируем парсер OptionAsset строго ОДИН раз для контракта
+            asset = OptionAsset(raw_symbol=option["symbol"], exchange_instance=self.exchange)
+
+            # Нас интересуют исключительно проданные опционы (Short позиции)
+            if option.get('buyOrSell', '').lower() == 'sell':
+                asset_type = asset.type.upper().strip()
+                current_strike = float(option.get('strike', 0.0))
+
+                # --- РАСПРЕДЕЛЕНИЕ И НАКОПЛЕНИЕ ПО PUT-НОГЕ ---
+                if "PUT" in asset_type or asset_type.startswith('P'):
+                    optionsSellPut.append(option)
+                    total_put_size += float(option.get('size', 0.0))
+                    # На ходу ищем МАКСИМАЛЬНЫЙ пут-страйк (нижний край коридора)
+                    put_strike = max(put_strike, current_strike)
+                    
+                # --- РАСПРЕДЕЛЕНИЕ И НАКОПЛЕНИЕ ПО CALL-НОГЕ ---
+                elif "CALL" in asset_type or asset_type.startswith('C'):
+                    optionsSellCall.append(option)
+                    total_call_size += float(option.get('size', 0.0))
+                    # На ходу ищем МИНИМАЛЬНЫЙ колл-страйк (верхний край коридора)
+                    call_strike = min(call_strike, current_strike)
+
+        # =====================================================================
+        # СТЕРИЛИЗАЦИЯ СТРАЙКОВ (Убираем хардкод и бесконечности из паспорта)
+        # =====================================================================
+        # Если при роллировании PUT-ноги нет, пускай put_strike будет честным 0.0
+        if not optionsSellPut:
+            put_strike = None
+            
+        # If call list is empty, clear infinity indicator to None for cleaner data consistency
+        if not optionsSellCall:
+            call_strike = None
+
+        # =====================================================================
+        # СБОРКА ЭТАЛОННОГО ПАСПОРТА ДАННЫХ МОНЕТЫ
+        # =====================================================================
+        coin_data = {
+            'nameCoin': nameCoin,
+            'optionsSellCall': optionsSellCall,
+            'optionsSellPut': optionsSellPut,
+            'total_call_size': total_call_size,
+            'total_put_size': total_put_size,
+            'put_strike': put_strike,
+            'call_strike': call_strike,
+            'ticPrice': self.ticPrice.get_ticker_by_symbol(symbol=nameCoin),                    # Текущий тик рынка
+            'open_futures': self.futures.get(nameCoin)    # Безопасный фьючерс без KeyError
+        }
+
+        return coin_data
+   
+ 
+    
+    def is_futures_data_valid0(self, futures_dict) -> bool:
+        # Шаг 1: Проверка внешней коробки (Аналогично опционам)
+        if futures_dict is None:
+            logger.error("❌ КРИТИЧЕСКАЯ ОШИБКА: Данные self.futures равны None!")
+            return False
+
+        if not isinstance(futures_dict, dict):
+            logger.error(f"❌ КРИТИЧЕСКАЯ ОШИБКА: Нарушен тип self.futures!")
+            return False
+
+        # Шаг 2: Внутренний аудит полей (Таможня для каждого открытого фьючерса)
+        # Создаем список для сброса сломанных монет, чтобы не индусить
+        corrupted_coins = []
+        
+        for coin_name, fut_info in futures_dict.items():
+            # Извлекаем внутренние параметры фьючерса БЕЗ подмен (дефолт None)
+            raw_size  = fut_info.get('size', None)
+            raw_side  = fut_info.get('side', None)
+            raw_price = fut_info.get('openPrice', None)
+
+            # УСЛОВНЫЙ ОПЕРАТОР: Проверка внутренностей на None
+            if raw_size is None or raw_side is None or raw_price is None:
+                logger.error(f"❌ [ФЬЮЧЕРС БРАК] У монеты {coin_name} поля содержат None!")
+                corrupted_coins.append(coin_name)
+
+        # Шаг 3: Очистка. Выжигаем только сломанные монеты, а здоровые оставляем в работе
+        for bad_coin in corrupted_coins:
+            del futures_dict[bad_coin]
+        return True
+    
+    
+    def is_options_data_valid0(self, options_dict) -> bool:
+        """
+        ВАЛИДАТОР ОПЦИОНОВ: Проверяет целостность внешней структуры портфеля.
+        Защищает главный диспетчер от критического падения при итерации.
+        """
+        # 1. Защита от полного отсутствия ответа (Сбой сети / таймаут API Bybit)
+        if options_dict is None:
+            logger.error("❌ КРИТИЧЕСКАЯ ОШИБКА: Данные self.options равны None! Робот ослеп.")
+            return False
+
+        # 2. Защита структуры (Гарантируем, что это dict, а не сломанная строка/список)
+        if not isinstance(options_dict, dict):
+            logger.error(f"❌ КРИТИЧЕСКАЯ ОШИБКА: Структура self.options сломана! Ожидался dict, пришел {type(options_dict)}.")
+            return False
+
+        # Если коробка данных цела — возвращаем True (даже если портфель пустой {})
+        return True
+   
+        
 
         
 # bybitOpt = BybitOptionBot()
