@@ -21,7 +21,7 @@ open_futures1 = {'SOL': {'symbol': 'SOL/USDT:USDT', 'side': 'buy', 'size': 1.5, 
 open_options1 = [{'symbol': 'SOL/USDT:USDT-260814-75-C', 'ccxt_symbol': 'SOL/USDT:USDT-260814-75-C', 'buyOrSell': 'sell', 'size': 3.0, 'entry_price': 0.94, 'hours_to_expiration': 132.35, 'strike': 75.0, 'type': 'CALL', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 40.12063646}, {'symbol': 'SOL/USDT:USDT-260814-73-P', 'ccxt_symbol': 'SOL/USDT:USDT-260814-73-P', 'buyOrSell': 'sell', 'size': 3.0, 'entry_price': 1.0, 'hours_to_expiration': 132.35, 'strike': 73.0, 'type': 'PUT', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 28.11017423}]
 
 open_options2 = ({'SOL': [{'symbol': 'SOL/USDT:USDT-260828-78-C', 'ccxt_symbol': 'SOL/USDT:USDT-260828-78-C', 
-                'buyOrSell': 'sell', 'size': 4.0, 'entry_price': 1.33, 'hours_to_expiration': 217.03,
+                'buyOrSell': 'buy', 'size': 4.0, 'entry_price': 1.33, 'hours_to_expiration': 217.03,
                 'strike': 78.0, 'type': 'CALL', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 48.10864144},
                 {'symbol': 'SOL/USDT:USDT-260821-74-P', 'ccxt_symbol': 'SOL/USDT:USDT-260821-74-P',
                  'buyOrSell': 'sell', 'size': 4.0, 'entry_price': 0.87, 'hours_to_expiration': 49.03, 
@@ -52,7 +52,7 @@ class TestClass:
     
     
     def __init__(self, 
-                #  ticPrice: float,
+                 ticPrice: float,
                  futures: dict,
                  options: list):
                         # 1. Формируем единую конфигурацию
@@ -63,8 +63,8 @@ class TestClass:
         self.exchange = botBybit
         self.futures = futures # open_futures2 # botBybit.get_active_futures_positions()
         self.options = options # botBybit.get_active_open_options3() 
-        # self.ticPrice = 
-        self.ddh_coins = ['DOGE']
+        self.ticPrice = ticPrice
+        self.ddh_coins = ['DOGE', 'XRP']
         self.listData = listData
     
     def process_hedging_logic2(self) -> bool:
@@ -131,14 +131,14 @@ class TestClass:
                         if coridor_result['analizeBool'] == False:
                             continue
                         
-                    if coin_data['call_strike'] < coin_data['ticPrice']:
+                    if coin_data['call_strike'] <= coin_data['ticPrice']:
                         call_result = self.analizCallStrike(coin_data)
                         logger.info(f"call_result {call_result}")
                         
                         if call_result['analizeBool'] == False:
                             continue
                         
-                    if coin_data['put_strike'] > coin_data['ticPrice']:
+                    if coin_data['put_strike'] >= coin_data['ticPrice']:
                         self.analizPutStrike(coin_data)
                         logger.info(f"✅ {coin_upper} хеджирование прошло успешно")
                         continue                    
@@ -421,7 +421,7 @@ class TestClass:
                         
         # Сценарий 4: Каскадный вылет цены за пределы страйков (Зона риска пробития)
         else:
-            logger.error(
+            logger.warning(
                 f"⚠️ Цена {ticPrice} ЗА ПРЕДЕЛАМИ зоны безопасности! ")
             dictPutSellAnaliz['analizeBool'] = True # ТРЕВОГА: Коридор пробит! Включаем защиту CALL/PUT веток!
             return dictPutSellAnaliz
@@ -564,15 +564,16 @@ class TestClass:
         # =====================================================================
         # Если при роллировании PUT-ноги нет, пускай put_strike будет честным 0.0
         if not optionsSellPut:
-            put_strike = None
+            put_strike = 0.0
             
         # If call list is empty, clear infinity indicator to None for cleaner data consistency
         if not optionsSellCall:
-            call_strike = None
+            call_strike = float("inf")
 
         # =====================================================================
         # СБОРКА ЭТАЛОННОГО ПАСПОРТА ДАННЫХ МОНЕТЫ
         # =====================================================================
+        
         coin_data = {
             'nameCoin': nameCoin,
             'optionsSellCall': optionsSellCall,
@@ -581,9 +582,12 @@ class TestClass:
             'total_put_size': total_put_size,
             'put_strike': put_strike,
             'call_strike': call_strike,
-            'ticPrice': float(input(f" inter tic price coin {nameCoin} :")),                  # Текущий тик рынка
+            'ticPrice': self.ticPrice, # float(input(f" inter tic price coin {nameCoin} :")),                  # Текущий тик рынка
             'open_futures': self.futures.get(nameCoin)    # Безопасный фьючерс без KeyError
         }
+        
+        for key, volme in  coin_data.items():
+            print(key , volme)
 
         return coin_data
    
@@ -640,11 +644,16 @@ class TestClass:
         
 
 if __name__ == "__main__":
-    pusto = TestClass(
-                      futures=open_futures2,
-                      options=open_options2
-                  )
-    hending = pusto.process_hedging_logic2()  
+    for tic in range(72, 80):
+        time.sleep(1)
+        print("=" * 33)
+        pusto = TestClass(
+                        futures=open_futures2,
+                        options=open_options2,
+                        ticPrice=float(tic)
+                        
+                    )
+        hending = pusto.process_hedging_logic2()  
         
     
     print("hello bro")  
