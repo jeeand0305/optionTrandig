@@ -20,8 +20,21 @@ import time
 open_futures1 = {'SOL': {'symbol': 'SOL/USDT:USDT', 'side': 'buy', 'size': 1.5, 'openPrice': 75.37941176, 'leverage': 10.0, 'initMargin': 11.5034122}, 'NEAR': {'symbol': 'NEAR/USDT:USDT', 'side': 'buy', 'size': 12.0, 'openPrice': 1.616, 'leverage': 1.0, 'initMargin': 19.5228}}
 open_options1 = [{'symbol': 'SOL/USDT:USDT-260814-75-C', 'ccxt_symbol': 'SOL/USDT:USDT-260814-75-C', 'buyOrSell': 'sell', 'size': 3.0, 'entry_price': 0.94, 'hours_to_expiration': 132.35, 'strike': 75.0, 'type': 'CALL', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 40.12063646}, {'symbol': 'SOL/USDT:USDT-260814-73-P', 'ccxt_symbol': 'SOL/USDT:USDT-260814-73-P', 'buyOrSell': 'sell', 'size': 3.0, 'entry_price': 1.0, 'hours_to_expiration': 132.35, 'strike': 73.0, 'type': 'PUT', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 28.11017423}]
 
+invers_open_options2 = ({'SOL': [{'symbol': 'SOL/USDT:USDT-260828-78-P', 'ccxt_symbol': 'SOL/USDT:USDT-260828-78-P', 
+                'buyOrSell': 'sell', 'size': 4.0, 'entry_price': 1.33, 'hours_to_expiration': 217.03,
+                'strike': 78.0, 'type': 'PUT', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 48.10864144},
+                {'symbol': 'SOL/USDT:USDT-260821-74-C', 'ccxt_symbol': 'SOL/USDT:USDT-260821-74-C',
+                 'buyOrSell': 'sell', 'size': 4.0, 'entry_price': 0.87, 'hours_to_expiration': 49.03, 
+                 'strike': 74.0, 'type': 'CALL', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 37.41257572}], 
+                  'XRP': [{'symbol': 'XRP/USDT:USDT-260820-1-C', 'ccxt_symbol': 'XRP/USDT:USDT-260820-1-C', 
+                'buyOrSell': 'sell', 'size': 20.0, 'entry_price': 0.0071, 'hours_to_expiration': 25.03,
+                'strike': 1.0, 'type': 'CALL', 'futures_symbol': 'XRP/USDT:USDT', 'initMargin': 4.2830806}, 
+                {'symbol': 'XRP/USDT:USDT-260820-0.98-P', 'ccxt_symbol': 'XRP/USDT:USDT-260820-0.98-P', 
+                 'buyOrSell': 'sell', 'size': 20.0, 'entry_price': 0.0032, 'hours_to_expiration': 25.03, 
+                 'strike': 0.98, 'type': 'PUT', 'futures_symbol': 'XRP/USDT:USDT', 'initMargin': 3.5989536}]})
+
 open_options2 = ({'SOL': [{'symbol': 'SOL/USDT:USDT-260828-78-C', 'ccxt_symbol': 'SOL/USDT:USDT-260828-78-C', 
-                'buyOrSell': 'buy', 'size': 4.0, 'entry_price': 1.33, 'hours_to_expiration': 217.03,
+                'buyOrSell': 'sell', 'size': 4.0, 'entry_price': 1.33, 'hours_to_expiration': 217.03,
                 'strike': 78.0, 'type': 'CALL', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 48.10864144},
                 {'symbol': 'SOL/USDT:USDT-260821-74-P', 'ccxt_symbol': 'SOL/USDT:USDT-260821-74-P',
                  'buyOrSell': 'sell', 'size': 4.0, 'entry_price': 0.87, 'hours_to_expiration': 49.03, 
@@ -115,6 +128,7 @@ class TestClass:
                     and coin_data['call_strike'] is not None):   
                     if coin_data['put_strike'] > coin_data['call_strike']:
 
+
                     # Запускаем инверсию ТОЛЬКО если проблема РЕАЛЬНО высветилась!
                         self.analiz_inverted_corridor(coin_data)
 
@@ -136,6 +150,7 @@ class TestClass:
                         logger.info(f"call_result {call_result}")
                         
                         if call_result['analizeBool'] == False:
+                            logger.info(f"✅ {coin_upper} хеджирование прошло успешно")
                             continue
                         
                     if coin_data['put_strike'] >= coin_data['ticPrice']:
@@ -143,10 +158,25 @@ class TestClass:
                         logger.info(f"✅ {coin_upper} хеджирование прошло успешно")
                         continue                    
 
-                # if coridor_result['analizeBool'] == True:
-                #     self.analizCallStrike(coin_data)
-                #     self.analizPutStrike(coin_data)
                 
+                # если всего один продоный страйк КОЛ или ПУТ
+                elif (coin_data['put_strike'] == None 
+                    or coin_data['call_strike'] == None): 
+
+                    if (coin_data['call_strike'] != None 
+                        and coin_data['call_strike'] <= coin_data['ticPrice']):
+                        call_result = self.analizCallStrike(coin_data)
+                        logger.info(f"call_result {call_result}")
+                        
+                        if call_result['analizeBool'] == False:
+                            logger.info(f"✅ {coin_upper} хеджирование прошло успешно")
+                            continue
+                        
+                    if (coin_data['put_strike'] != None 
+                        and coin_data['put_strike'] >= coin_data['ticPrice']):
+                        self.analizPutStrike(coin_data)
+                        logger.info(f"✅ {coin_upper} хеджирование прошло успешно")
+                        continue   
                 
                 # [Сюда стыкуется Кусок 3: вызов analizCoridorStrikes и запуск CALL/PUT веток]
                 
@@ -225,7 +255,7 @@ class TestClass:
 
 
 
-    def analizCallStrike(self, coin_data: dict):
+    def analizCallStrike(self, coin_data: dict, midStrike = None):
         """
         ЗАЩИТА CALL-НОГИ (Версия 4.0 — С полным переворотом позиции):
         Анализирует риски пробития рынка вверх выше минимального страйка CALL.
@@ -246,6 +276,11 @@ class TestClass:
         total_call_size = coin_data['total_call_size']
         ticPrice        = coin_data['ticPrice']
         open_futures    = coin_data['open_futures']
+        
+        if midStrike:
+            call_strike = midStrike
+            logger.info(f" сработол call_strike {call_strike} "
+                    f" защита midStrike {midStrike}  обратний инверсионый опцион ")
 
         # === УСЛОВНЫЙ ОПЕРАТОР: ТРИГГЕР ПРОБИТИЯ СТРАЙКА CALL ВВЕРХ ===
         if ticPrice >= call_strike:
@@ -293,7 +328,7 @@ class TestClass:
                 return dictPutSellAnaliz 
 
 
-    def analizPutStrike(self, coin_data: dict):
+    def analizPutStrike(self, coin_data: dict, midStrike = None):
         """
         ЗАЩИТА PUT-НОГИ (Версия 4.0 — С полным переворотом позиции):
         Анализирует риски пробития рынка вниз ниже максимального страйка PUT.
@@ -310,7 +345,11 @@ class TestClass:
         total_put_size = coin_data['total_put_size']
         ticPrice       = coin_data['ticPrice']
         open_futures   = coin_data['open_futures']
-
+        
+        if midStrike:
+            put_strike = midStrike
+            logger.info(f" сработол put_strike {put_strike} "
+                        f" защита midStrike {midStrike}  обратний инверсионый опцион ")
         # === УСЛОВНЫЙ ОПЕРАТОР: ТРИГГЕР ПРОБИТИЯ СТРАЙКА PUT ВНИЗ ===
         if ticPrice <= put_strike:
             logger.warning(f"🚨 [ПАНИКА PUT] Цена {ticPrice} ниже страйка PUT {put_strike}! Активирован SHORT хэдж.")
@@ -466,52 +505,60 @@ class TestClass:
         
         # --- СЦЕНАРИЙ А: ЦЕНА НАХОДИТСЯ НА СЕРЕДИНЕ ИЛИ ВЫШЕ (100+) ---
         if mid_price < ticPrice:
-            if total_put_size == fut_size and fut_side == 'buy': 
-                return 
+            # if total_put_size == fut_size and fut_side == 'buy':
+            logger.info(f"work inversi CALL")
+            self.analizCallStrike(coin_data=coin_data, midStrike=mid_price)
+            return 
             
-            elif total_put_size != fut_size and fut_side != 'buy':            
-                # Компактный тернарный оператор вычисляет точную дельту с учетом позиции
-                delta = (total_put_size - fut_size if fut_side == 'buy' 
-                         else total_put_size)
+            # if total_put_size != fut_size and fut_side != 'buy':            
+            #     # Компактный тернарный оператор вычисляет точную дельту с учетом позиции
+            #     delta = (total_put_size - fut_size if fut_side == 'buy' 
+            #              else total_put_size)
 
-                logger.info(
-                    f"📈 [ИНВЕРСИЯ ТРЕНДА] Текущий тик {ticPrice} >= "
-                    f" Середины {mid_price}. "
-                    f"Целевой хэдж: BUY (LONG) | Необходимый объем: "
-                    f" | Рассчитанная дельта ордера: {delta}" )
+            #     logger.info(
+            #         f"📈 [ИНВЕРСИЯ ТРЕНДА] Текущий тик {ticPrice} >= "
+            #         f" Середины {mid_price}. "
+            #         f"Целевой хэдж: BUY (LONG) | Необходимый объем: "
+            #         f" | Рассчитанная дельта ордера: {delta}" )
 
-                # Передаем рассчитанную дельту в наш универсальный исполнитель ордеров
-                self.execute_hedge_adjustment(nameCoin=nameCoin,
-                                              target_side='buy',
-                                              delta=delta)
-                return
+            #     # Передаем рассчитанную дельту в наш универсальный исполнитель ордеров
+            #     self.execute_hedge_adjustment(nameCoin=nameCoin,
+            #                                   target_side='buy',
+            #                                   delta=delta)
+            #     return
+            
+            
         # --- СЦЕНАРИЙ Б: ЦЕНА УПАЛА НИЖЕ МАТЕМАТИЧЕСКОЙ СЕРЕДИНЫ (<100) ---
         elif ticPrice <= mid_price:
-            if total_call_size == fut_size and fut_side == 'sell': 
-                return 
+            logger.info(f"work inversi PUT")
+            self.analizPutStrike(coin_data=coin_data, midStrike=mid_price)
+            return 
+        
+            # if total_call_size == fut_size and fut_side == 'sell': 
+            #     return 
                         
-            elif total_call_size != fut_size and fut_side != 'buy': 
-                # Целевой объем хэджа должен жестко равняться объему PUT-ноги
+            # elif total_call_size != fut_size and fut_side != 'buy': 
+            #     # Целевой объем хэджа должен жестко равняться объему PUT-ноги
 
 
-                # Компактный тернарный оператор вычисляет точную дельту для шорт-позиции
-                delta = (total_put_size - fut_size if fut_side == 'sell' 
-                         else total_put_size)
+            #     # Компактный тернарный оператор вычисляет точную дельту для шорт-позиции
+            #     delta = (total_put_size - fut_size if fut_side == 'sell' 
+            #              else total_put_size)
 
-                logger.info(
-                    f"📉 [ИНВЕРСИЯ ТРЕНДА] Текущий тик {ticPrice} < "
-                    f" Середины {mid_price}. "
-                    f"Целевой хэдж: SELL (SHORT) | Необходимый объем: "
-                    f"  | Рассчитанная дельта ордера: {delta}" )
+            #     logger.info(
+            #         f"📉 [ИНВЕРСИЯ ТРЕНДА] Текущий тик {ticPrice} < "
+            #         f" Середины {mid_price}. "
+            #         f"Целевой хэдж: SELL (SHORT) | Необходимый объем: "
+            #         f"  | Рассчитанная дельта ордера: {delta}" )
 
-                # Передаем рассчитанную дельту в наш универсальный исполнитель ордеров
-                self.execute_hedge_adjustment(nameCoin=nameCoin, target_side='sell', delta=delta)
+            #     # Передаем рассчитанную дельту в наш универсальный исполнитель ордеров
+            #     self.execute_hedge_adjustment(nameCoin=nameCoin, target_side='sell', delta=delta)
 
-                # Команда выполнена, ранний выход в диспетчер обеспечен, флаги больше не плодим
-                return
-            else:
-                logger.warning(f" bag v function analiz_inverted_corridor")
-                return
+            #     # Команда выполнена, ранний выход в диспетчер обеспечен, флаги больше не плодим
+            #     return
+        else:
+            logger.warning(f" bag v function analiz_inverted_corridor")
+            return
    
     
     def aggregate_coin_data(self, optinsList: list, nameCoin: str) -> dict:
@@ -564,11 +611,13 @@ class TestClass:
         # =====================================================================
         # Если при роллировании PUT-ноги нет, пускай put_strike будет честным 0.0
         if not optionsSellPut:
-            put_strike = 0.0
+            put_strike = None
+            # put_strike = 0.0
             
         # If call list is empty, clear infinity indicator to None for cleaner data consistency
         if not optionsSellCall:
-            call_strike = float("inf")
+            call_strike = None
+            # call_strike = float("inf")
 
         # =====================================================================
         # СБОРКА ЭТАЛОННОГО ПАСПОРТА ДАННЫХ МОНЕТЫ
@@ -649,7 +698,7 @@ if __name__ == "__main__":
         print("=" * 33)
         pusto = TestClass(
                         futures=open_futures2,
-                        options=open_options2,
+                        options= invers_open_options2, #open_options2, #
                         ticPrice=float(tic)
                         
                     )
