@@ -8,8 +8,6 @@ if root_dir not in sys.path:
 
 # Теперь твои оригинальные импорты сработают без ошибок!
 import bybit_client
-
-
 import analytics
 import configBybit
 import time
@@ -162,6 +160,8 @@ def main():
     #  покупка опциона 
     # =============================================================  
     logger.warning(f"8. открываем ордер")
+    # Универсальный алгоритм преследования цены (Chase) 
+    # для неликвидных опционов.
     success = clientBybit.chase_order(
         symbol=symbolOptionBybit2['symbol'],          # Сделай 'O' большой
         side=symbolOptionBybit2['buyOrSell'],        # Сделай 'O' большой
@@ -170,20 +170,33 @@ def main():
         check_interval_sec=30,
         slippage_step_pct=1,
         max_slippage_pct=20)   
-
-    
-    
-    # logger.warning(f"8. открываем ордер")
-    # success = clientBybit.chase_order(
-    #     symbol=symbolOptionBybit['symbol'],
-    #     side=symbolOptionBybit['buyOrSell'],
-    #     qty=analytics.selctionQty(),
-    #     price_limit=symbolOptionBybit['premium'],
-    #     check_interval_sec=30,
-    #     slippage_step_pct=1,
-    #     max_slippage_pct=20)   
+   
 
     logger.info(f"{success}")
+    
+
+def main2():
+    clientBybit=bybit_client.BybitOptionBot()
+    count = 0    
+    while count < 10:
+        
+        
+        optionsAll = clientBybit.get_active_open_options3()
+        futuresAll = clientBybit.get_active_futures_positions()
+        
+        clientBybit.process_hedging_logic3(
+            optionsAll=optionsAll,
+            futuresAll=futuresAll)
+        
+        # clientBybit.aggregate_coin_data(nameCoin='SOL',
+        #                                 optionsList=optionsAll['SOL'],
+        #                                 futuresAll=futuresAll['SOL'])
+        
+        time.sleep(60)
+        count +=1
+        
+    
+    ...    
     
     
 # ============================================================
@@ -192,7 +205,10 @@ def main():
 if __name__ == "__main__":
     logger.info("Запуск инициализации торгового робота...")
     
-    main()
+
+    main2()
+    
+    # main()
     
     # Создаем экземпляр нашего бота
     # bot = BybitOptionBot()

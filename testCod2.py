@@ -1,5 +1,6 @@
 import sys
 import os
+import numpy as np
 
 # Автоматически добавляем корень проекта и папку со стратегией в пути Python
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -40,17 +41,17 @@ open_options2 = ({'SOL': [{'symbol': 'SOL/USDT:USDT-260828-78-C', 'ccxt_symbol':
                  'buyOrSell': 'sell', 'size': 4.0, 'entry_price': 0.87, 'hours_to_expiration': 49.03, 
                  'strike': 74.0, 'type': 'PUT', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 37.41257572}], 
                   'XRP': [{'symbol': 'XRP/USDT:USDT-260820-1-C', 'ccxt_symbol': 'XRP/USDT:USDT-260820-1-C', 
-                'buyOrSell': 'sell', 'size': 20.0, 'entry_price': 0.0071, 'hours_to_expiration': 25.03,
+                'buyOrSell': 'buy', 'size': 20.0, 'entry_price': 0.0071, 'hours_to_expiration': 25.03,
                 'strike': 1.0, 'type': 'CALL', 'futures_symbol': 'XRP/USDT:USDT', 'initMargin': 4.2830806}, 
                 {'symbol': 'XRP/USDT:USDT-260820-0.98-P', 'ccxt_symbol': 'XRP/USDT:USDT-260820-0.98-P', 
                  'buyOrSell': 'sell', 'size': 20.0, 'entry_price': 0.0032, 'hours_to_expiration': 25.03, 
                  'strike': 0.98, 'type': 'PUT', 'futures_symbol': 'XRP/USDT:USDT', 'initMargin': 3.5989536}]})
 
-open_futures2 = ({'XRP': {'symbol': 'XRP/USDT:USDT', 'side': 'sell', 'size': 10.0, 'openPrice': 1.0229, 
+invertor_open_futures2 = ({'XRP': {'symbol': 'XRP/USDT:USDT', 'side': 'sell', 'size': 10.0, 'openPrice': 1.0229, 
                           'leverage': 10.0, 'initMargin': 1.0340519},
                   'NEAR': {'symbol': 'NEAR/USDT:USDT', 'side': 'buy', 'size': 12.0, 'openPrice': 1.616, 
                            'leverage': 1.0, 'initMargin': 19.4064},
-                  'SOL': {'symbol': 'SOL/USDT:USDT', 'side': 'buy', 'size': 1.5, 'openPrice': 79.25208792, 
+                  'SOL': {'symbol': 'SOL/USDT:USDT', 'side': 'buy', 'size': 1.25, 'openPrice': 78, 
                         'leverage': 10.0, 'initMargin': 11.49544031}})
 
 listData = [{'symbol': 'SOL/USDT:USDT-260828-78-C', 'ccxt_symbol': 'SOL/USDT:USDT-260828-78-C', 'buyOrSell': 'sell', 'size': 4.0, 'entry_price': 1.33, 'hours_to_expiration': 219.21, 'strike': 78.0, 'type': 'CALL', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 47.19072183}, {'symbol': 'XRP/USDT:USDT-260820-1-C', 'ccxt_symbol': 'XRP/USDT:USDT-260820-1-C', 'buyOrSell': 'sell', 'size': 20.0, 'entry_price': 0.0071, 'hours_to_expiration': 27.21, 'strike': 1.0, 'type': 'CALL', 'futures_symbol': 'XRP/USDT:USDT', 'initMargin': 4.23712076}, {'symbol': 'XRP/USDT:USDT-260820-0.98-P', 'ccxt_symbol': 'XRP/USDT:USDT-260820-0.98-P', 'buyOrSell': 'sell', 'size': 20.0, 'entry_price': 0.0032, 'hours_to_expiration': 27.21, 'strike': 0.98, 'type': 'PUT', 'futures_symbol': 'XRP/USDT:USDT', 'initMargin': 3.66835796}, {'symbol': 'SOL/USDT:USDT-260821-74-P', 'ccxt_symbol': 'SOL/USDT:USDT-260821-74-P', 'buyOrSell': 'sell', 'size': 4.0, 'entry_price': 0.87, 'hours_to_expiration': 51.21, 'strike': 74.0, 'type': 'PUT', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 37.92337951}]
@@ -77,8 +78,9 @@ class TestClass:
         self.futures = futures # open_futures2 # botBybit.get_active_futures_positions()
         self.options = options # botBybit.get_active_open_options3() 
         self.ticPrice = ticPrice
-        self.ddh_coins = ['DOGE', 'XRP']
+        self.ddh_coins = ['DOGE', 'SOL']
         self.listData = listData
+    
     
     def process_hedging_logic2(self) -> bool:
         """
@@ -103,7 +105,6 @@ class TestClass:
             logger.info("ℹ️ Портфель опционов пуст. Хеджирование не требуется.")
             return True
         
-        
         # 2 kusok Перебираем сгруппированный словарь опционов по монетам
         for coin_name, options_list in self.options.items():
             coin_upper = coin_name.upper()
@@ -127,8 +128,6 @@ class TestClass:
                 if (coin_data['put_strike'] is not None 
                     and coin_data['call_strike'] is not None):   
                     if coin_data['put_strike'] > coin_data['call_strike']:
-
-
                     # Запускаем инверсию ТОЛЬКО если проблема РЕАЛЬНО высветилась!
                         self.analiz_inverted_corridor(coin_data)
 
@@ -157,7 +156,6 @@ class TestClass:
                         self.analizPutStrike(coin_data)
                         logger.info(f"✅ {coin_upper} хеджирование прошло успешно")
                         continue                    
-
                 
                 # если всего один продоный страйк КОЛ или ПУТ
                 elif (coin_data['put_strike'] == None 
@@ -177,9 +175,7 @@ class TestClass:
                         self.analizPutStrike(coin_data)
                         logger.info(f"✅ {coin_upper} хеджирование прошло успешно")
                         continue   
-                
-                # [Сюда стыкуется Кусок 3: вызов analizCoridorStrikes и запуск CALL/PUT веток]
-                
+                                
             except Exception as coin_error:
                 # Если на XRP произойдет технический или сетевой сбой — робот не упадет
                 logger.error(f"💥 Критический сбой при обработке монеты {coin_upper}: {coin_error}")
@@ -252,7 +248,6 @@ class TestClass:
         except Exception as order_error:
             # Если Bybit отклонит ордер (Rate Limit, Margin Call) — блок except удержит робота на плаву
             logger.error(f"💥 Критический сбой API при исполнении хэдж-ордера по {nameCoin}: {order_error}")
-
 
 
     def analizCallStrike(self, coin_data: dict, midStrike = None):
@@ -635,8 +630,8 @@ class TestClass:
             'open_futures': self.futures.get(nameCoin)    # Безопасный фьючерс без KeyError
         }
         
-        for key, volme in  coin_data.items():
-            print(key , volme)
+        # for key, volme in  coin_data.items():
+        #     print(key , volme)
 
         return coin_data
    
@@ -693,13 +688,17 @@ class TestClass:
         
 
 if __name__ == "__main__":
-    for tic in range(72, 80):
+    
+# Пробегаем от 0.0 до 1.0 (стоп-число 1.1 не включается в итерацию)
+    for tic in np.arange(0.9, 1.1, 0.01):
+        print(round(tic, 1))
+    # for tic in range(72, 80):
         time.sleep(1)
         print("=" * 33)
         pusto = TestClass(
-                        futures=open_futures2,
-                        options= invers_open_options2, #open_options2, #
-                        ticPrice=float(tic)
+                        futures=invertor_open_futures2,
+                        options= open_options2, # invers_open_options2, #
+                        ticPrice=float(float(format(tic, ".2f")))
                         
                     )
         hending = pusto.process_hedging_logic2()  
