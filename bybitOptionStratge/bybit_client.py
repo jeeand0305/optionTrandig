@@ -1397,6 +1397,13 @@ class BybitOptionBot:
                 logger.info(f"ℹ️ {coin_upper} управляется встроенным DDH Bybit. Пропуск.")
                 continue
             
+            # Инициализируем парсер OptionAsset строго ОДИН раз для контракта
+            asset = OptionAsset(raw_symbol=options_list[0]["symbol"], exchange_instance=self.exchange)
+            # provrka hedge and One Way perkluchaem na hedge
+            self.check_position_mode_direct(
+                target_symbol=asset.futures_symbol)
+                
+            
             # --- ВНУТРЕННИЙ ЩИТ БЕЗОПАСНОСТИ ДЛЯ КАЖДОЙ МОНЕТЫ ---
             try:
                 # ШАГ 1: Агрегируем данные
@@ -1963,12 +1970,12 @@ class BybitOptionBot:
             # Инициализируем парсер OptionAsset строго ОДИН раз для контракта
             asset = OptionAsset(raw_symbol=option["symbol"], exchange_instance=self.exchange)
 
-            symbol_ccxt = self.check_position_mode_direct(symbol=asset.ccxt_symbol)
-            if symbol_ccxt:
-                # menyaem model open order v hedgerovanie
-                positionModel = self.set_position_mode_to_hedge_direct(target_symbol=asset.ccxt_symbol)
-                logger.error(f"position model hedger and one way "
-                             f" {positionModel}")
+            # symbol_ccxt = self.check_position_mode_direct(symbol=asset.ccxt_symbol)
+            # if symbol_ccxt:
+            #     # menyaem model open order v hedgerovanie
+            #     positionModel = self.set_position_mode_to_hedge_direct(target_symbol=asset.ccxt_symbol)
+            #     logger.error(f"position model hedger and one way "
+            #                  f" {positionModel}")
 
                 
             # Нас интересуют исключительно проданные опционы (Short позиции)
@@ -2085,10 +2092,12 @@ class BybitOptionBot:
         False -> На фьючерсе активен HEDGE MODE. Всё отлично для арбитража (чисто).
         True  -> Обнаружен ONE-WAY MODE или сбой API. Это проблема (риск).
         """
+        
         try:
             # Запрашиваем структуру позиций напрямую по готовому символу
             positions = self.exchange.fetch_positions(symbols=[target_symbol])
-            
+            logger.info(f"target_symbol, {target_symbol}"
+                        f"position {positions}")
             # Твой лаконичный капкан: проверяем флаг у первого элемента структуры
             if positions[0].get('hedged') is True:
                 logger.info(f"✅ На {target_symbol} активен HEDGE MODE. Всё отлично (False).")
@@ -2096,6 +2105,9 @@ class BybitOptionBot:
                 
             elif positions[0].get('hedged') is False:
                 logger.warning(f"🚨 На {target_symbol} обнаружен ONE-WAY MODE! Это риск для арбитража (True).")
+                self.set_position_mode_to_hedge_direct(
+                    target_symbol=target_symbol
+                )
                 return True
                 
             else:
@@ -2135,11 +2147,123 @@ class BybitOptionBot:
             # Ошибка будет, если на аккаунте висят открытые позы или ордера
             logger.error(f"💥 Не удалось переключить {target_symbol} в Hedge: {e}")
             # for key in e:
-            logger.info(f" e {type(e)}")
+            # logger.info(f" e {type(e)}")
             return True # Проблема осталась
 
+    
+    def open_hedge_order(self, 
+                         target_symbol: str = 'XRP/USDT:USDT', 
+                         side = str, 
+                         qty = float, 
+                         hedge_type: str = 'long') -> bool:
+        """
+        ОТКРЫТИЕ ОРДЕРА В РЕЖИМЕ HEDGE: Выставляет рыночный ордер в нужную ячейку.
         
-bybitOpt = BybitOptionBot()
+        :param target_symbol: Готовый CCXT-символ фьючерса (н-р, "SOL/USDT:USDT").
+        :param side: Действие ордера: 'buy' (купить) или 'sell' (продать).
+        :param amount: Объем ордера в контрактах/монетах.
+        :param hedge_type: Куда шлем ордер: 'long' (ячейка лонга) или 'short' (ячейка шорта).
+        
+        ЛОГИКА ТВОЕГО СТАНДАРТА РИСКОВ:
+        True  -> Ошибка при выставлении ордера (риск/проблема осталась).
+        False -> Ордер успешно исполнен, позиция открыта (всё чисто).
+        """
+        try:
+            side_lower = side.lower()
+            hedge_lower = hedge_type.lower()
+            
+            # Определяем positionIdx: 1 - для лонг-стороны, 2 - для шорт-стороны
+            pos_idx = 1 if hedge_lower == 'long' else 2
+            
+            logger.info(f"🛒 Отправка Hedge-ордера на {target_symbol}: " 
+                        f" {side_lower.upper()} {qty} в ячейку "
+                        f"{hedge_lower.upper()} (idx: {pos_idx})")
+            
+            # Передаем positionIdx в params, чтобы биржа поняла, какую сторону мы торгуем
+            params = {'positionIdx': pos_idx}
+            
+            # Создаем рыночный ордер
+            response = self.exchange.create_order(
+                symbol=target_symbol,
+                type='market',
+                side=side_lower,
+                amount=qty,
+                params=params
+            )
+            
+            logger.info(f"✅ Hedge-ордер успешно исполнен. ID: {response.get('id')}")
+            return False  # Проблем нет
+
+        except Exception as e:
+            logger.error(f"💥 Критическая ошибка при открытии Hedge-ордера на {target_symbol}: {e}")
+            return True  # Есть проблема, ордер не ушел
+
+        
+    def close_hedge_position(self, 
+                             target_symbol: str, 
+                             hedge_type: str = 'long', 
+                             qty: float = None) -> bool:
+        """
+        ЗАКРЫТИЕ ПОЗИЦИИ В РЕЖИМЕ HEDGE: Закрывает (или сокращает) позицию в указанной ячейке.
+        
+        :param target_symbol: Готовый CCXT-symbol фьючерса (н-р, "SOL/USDT:USDT").
+        :param hedge_type: Какую ячейку закрываем: 'long' или 'short'.
+        :param amount: Объем для закрытия. Если None — функция сама запросит баланс и закроет ВСЁ в ноль.
+        
+        ЛОГИКА ТВОЕГО СТАНДАРТА РИСКОВ:
+        True  -> Ошибка при закрытии (риск/проблема осталась).
+        False -> Позиция успешно закрыта/уменьшена (всё чисто).
+        """
+        try:
+            hedge_lower = hedge_type.lower()
+            pos_idx = 1 if hedge_lower == 'long' else 2
+            
+            # 1. Если объем не указан, автоматически находим текущий размер позиции в этой ячейке
+            if qty is None:
+                positions = self.exchange.fetch_positions(symbols=[target_symbol])
+                # Ищем нужную ячейку по совпадению positionIdx
+                target_pos = [p for p in positions if int(p.get('info', {}).get('positionIdx', 0)) == pos_idx]
+                
+                if not target_pos:
+                    logger.info(f"✅ Активной ячейки {hedge_lower.upper()} для {target_symbol} не найдено. Закрытие не требуется.")
+                    return False
+                
+                # Забираем текущий объем позиции
+                qty = abs(float(target_pos[0].get('contracts', 0) or target_pos[0].get('size', 0) or 0))
+                
+                if amount == 0:
+                    logger.info(f"✅ Позиция в ячейке {hedge_lower.upper()}"
+                                f" по {target_symbol} уже равна нулю.")
+                    return False
+
+            # 2. Определяем противоположную сторону для закрытия
+            close_side = 'sell' if hedge_lower == 'long' else 'buy'
+            
+            logger.info(f"🛒 Закрытие Hedge-позиции на {target_symbol}:"
+                        f" {close_side.upper()} {qty} из ячейки "
+                        f" {hedge_lower.upper()} (idx: {pos_idx})")
+            
+            # Отправляем рыночный ордер на закрытие
+            response = self.exchange.create_order(
+                symbol=target_symbol,
+                type='market',
+                side=close_side,
+                amount=qty,
+                params={'positionIdx': pos_idx}
+            )
+            
+            logger.info(f"🎉 Позиция {hedge_lower.upper()} по "
+                        f" {target_symbol} успешно ликвидирована/уменьшена.")
+            return False # Проблема решена, рисков нет
+
+        except Exception as e:
+            logger.error(f"💥 Критическая ошибка при закрытии Hedge-позиции"
+                         f" на {target_symbol}: {e}")
+            return True  # Есть проблема, позиция осталась под риском
+
+    
+        
+# bybitOpt = BybitOptionBot()
 
 #  getD = bybitOpt.get_historical_closes_candals("DOGE")
 #  getD = bybitOpt.fetch_option_market_data('BTC')
@@ -2172,8 +2296,13 @@ bybitOpt = BybitOptionBot()
 # getD = bybitOpt.get_active_futures_positions()
 # getD = bybitOpt.process_hedging_logic()
 # getD = bybitOpt.check_bybit_position_mode()
-getD = bybitOpt.check_position_mode_direct()
+# getD = bybitOpt.check_position_mode_direct()#teting 08.09.26
 # getD = bybitOpt.set_position_mode_to_hedge_direct()
+# getD = bybitOpt.open_hedge_order(side='buy', qty=10.0,)
+# getD = bybitOpt.close_hedge_position(
+#     target_symbol="XRP/USDT:USDT",
+#     hedge_type = 'long',
+#     qty=10,)
 
-logger.info(f"{getD}")
+# logger.info(f"{getD}")
 
