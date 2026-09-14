@@ -686,6 +686,15 @@ class TestClass:
         return True
    
         
+    def razbor():
+        listD = []
+['SOL/USDT:USDT', 'buy'
+[2026-09-13 21:52:53] INFO:  ('1000PEPE/USDT:USDT', 'buy')
+[2026-09-13 21:52:53] INFO:  ('1000PEPE/USDT:USDT', 'sell')
+[2026-09-13 21:52:53] INFO:  ('XRP/USDT:USDT', 'buy')
+[2026-09-13 21:52:53] INFO:  ('XRP/USDT:USDT', 'sell')
+
+
 
 if __name__ == "__main__":
     
