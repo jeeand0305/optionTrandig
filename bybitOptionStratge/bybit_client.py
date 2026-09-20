@@ -1794,7 +1794,7 @@ class BybitOptionBot:
         total_call_size = coin_data['total_call_size']
         ticPrice        = coin_data['ticPrice']
         open_futures    = coin_data['open_futures']
-        futures_symbol  = coin_data['optionsSellCall'][0]['futures_symbol']
+        futures_symbol  = coin_data['optionsSellCall'][0]['symbol']
         side_call       = 'buy'
         
         # используем среднию при не правильном кондоре
@@ -1819,15 +1819,39 @@ class BybitOptionBot:
                 if open_future:
                     fut_size = float(open_future.get('size', 0.0))
                     fut_side = open_future.get('side', '').lower().strip()
+                    fut_open_price = float(open_future('openPrice', ticPrice))
                     logger.info(f" 2fut_side {fut_side}, fut_size {fut_size}"
                                 f"total_call_size  {total_call_size}")
+                            
+                                
+                # можно сделать еслди цена подходит ближе к страйку
+                # чобы улучшить цене покупки фючерса если он пойдет мимо строрки
+                if (fut_side == 'buy' and total_call_size == fut_size
+                    and fut_open_price > ticPrice > call_strike):
+                    self.close_hedge_position(
+                        target_symbol=futures_symbol,
+                        target_side=fut_side,
+                        qty=fut_size)
                     
-                    # --- УМНЫЙ РАСЧЕТ ДЕЛЬТЫ С УЧЕТОМ НАПРАВЛЕНИЯ ПОЗИЦИИ ---
-                # если обьем и напровление совпало пропускаем
-                if fut_side == 'buy' and total_call_size == fut_size:
+                    time.sleep(5)
+                    self.open_hedge_order(
+                        target_symbol=futures_symbol,
+                        side=fut_side,
+                        qty=fut_size
+                    )
+                                              
                     logger.info(f"if fut_side == 'buy' and total_call_size == fut_size:"
                                 f"total_call_size  {total_call_size}")
                     continue
+                
+                                    # --- УМНЫЙ РАСЧЕТ ДЕЛЬТЫ С УЧЕТОМ НАПРАВЛЕНИЯ ПОЗИЦИИ ---
+                # если обьем и напровление совпало пропускаем
+                if fut_side == 'buy' and total_call_size == fut_size:
+                    logger.info(f"if (fut_side == 'buy' and total_call_size == fut_size"
+                                f"and fut_open_price > ticPrice > call_strike):"
+                                f"total_call_size  {total_call_size}")
+                    continue
+                
                 
                 # отрабатываем если обем открытой позиции не равен 
                 if fut_side == 'buy':
@@ -1993,7 +2017,7 @@ class BybitOptionBot:
         total_put_size = coin_data['total_put_size']
         ticPrice       = coin_data['ticPrice']
         open_futures   = coin_data['open_futures']
-        futures_symbol = coin_data['optionsSellPut'][0]['futures_symbol']
+        futures_symbol = coin_data['optionsSellPut'][0]['symbol']
         side_put       = 'sell'
         
            # используем среднию при не правильном кондоре
@@ -2016,14 +2040,36 @@ class BybitOptionBot:
                 if future:
                     fut_size = float(future.get('size', 0.0))
                     fut_side = future.get('side', '').lower().strip()
+                    fut_open_price = float(future.get('openPrice', ticPrice))
                     logger.info(f"if future fut_size{fut_size}"
                                 f" futside  {fut_side}")
+        
+         
+                # можно сделать еслди цена подходит ближе к страйку
+                # чобы улучшить цене покупки фючерса если он пойдет мимо стрika
+                if (fut_side == 'buy' and total_put_size == fut_size
+                    and put_strike > ticPrice > fut_open_price ):
+                    self.close_hedge_position(
+                        target_symbol=futures_symbol,
+                        target_side=fut_side,
+                        qty=fut_size)
+                    
+                    time.sleep(5)
+                    self.open_hedge_order(
+                        target_symbol=futures_symbol,
+                        side=fut_side,
+                        qty=fut_size)
+                                              
+                    logger.info(f"(fut_side == 'buy' and total_put_size == fut_size"
+                                f"and put_strike > ticPrice > fut_open_price )::"
+                                f"total_call_size  {total_put_size}")
+                    continue
                     
                 # если обьем и напровление совпало пропускаем
                 if fut_side == 'sell' and total_put_size == fut_size:
                     logger.info(f"if fut_side == 'sell' and total_put_size == fut_size:")
                     continue
-                
+
                  # отрабатываем если обем открытой позиции не равен 
                 if fut_side == 'sell':
                     # Стоим в нужную сторону (SELL) — просто добираем нехватку лотов шорта
@@ -2081,7 +2127,6 @@ class BybitOptionBot:
         else:
             logger.error(f"cамый нижний еррор")
 
- 
     
     def analizCoridorStrikes2(self, coin_data: dict) -> dict:
         """
@@ -2307,8 +2352,8 @@ class BybitOptionBot:
             'ticPrice': ticPrice, # float(input(f" inter tic price coin {nameCoin} :")),                  # Текущий тик рынка
             'open_futures': futuresAll.get(nameCoin, None)    # Безопасный фьючерс без KeyError
         }
-        for key, volme in coin_data.items():
-            logger.info(f" {key , volme}")
+        # for key, volme in coin_data.items():
+        #     logger.info(f" {key , volme}")
 
         return coin_data
     

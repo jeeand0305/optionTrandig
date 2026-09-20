@@ -1,4 +1,6 @@
 import logging
+from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
 import os
 
 # =====================================================================
@@ -65,10 +67,22 @@ def setup_logger(name="RatioBot"):
     )
     
     # Указываем имя файла и кодировку utf-8, чтобы русский текст не ломался
-    file_handler = logging.FileHandler("bot.log", mode='w', encoding="utf-8")
+    file_handler = RotatingFileHandler(
+        filename='bot.log',
+        maxBytes=10*1024*1024,
+        backupCount=3,
+        encoding='utf-8')
+    
+    # file_handler = TimedRotatingFileHandler(
+    #     filename="bot.log",
+    #     when="MIDNIGHT",
+    #     interval=1,
+    #     backupCount=7,
+    #     encoding='utf-8')
+    # file_handler = logging.FileHandler("bot.log", mode='w', encoding="utf-8")
     file_handler.setFormatter(file_formatter)
     file_handler.setLevel(logging.INFO)
-
+    
     # -----------------------------------------------------------------
     # ТОЧКА НАСТРОЙКИ ПОТОКА №2: ВЫВОД В КОНСОЛЬ VS CODE (ЦВЕТНОЙ)
     # -----------------------------------------------------------------

@@ -178,7 +178,7 @@ def main():
 def main2():
     clientBybit=bybit_client.BybitOptionBot()
     count = 0    
-    while count < 10:
+    while True:
         
         
         optionsAll = clientBybit.get_active_open_options3()
@@ -192,7 +192,7 @@ def main2():
         #                                 optionsList=optionsAll['SOL'],
         #                                 futuresAll=futuresAll['SOL'])
         
-        time.sleep(60)
+        time.sleep(300)
         count +=1
         
     
