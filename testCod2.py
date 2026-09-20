@@ -56,6 +56,10 @@ invertor_open_futures2 = ({'XRP': {'symbol': 'XRP/USDT:USDT', 'side': 'sell', 's
 
 listData = [{'symbol': 'SOL/USDT:USDT-260828-78-C', 'ccxt_symbol': 'SOL/USDT:USDT-260828-78-C', 'buyOrSell': 'sell', 'size': 4.0, 'entry_price': 1.33, 'hours_to_expiration': 219.21, 'strike': 78.0, 'type': 'CALL', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 47.19072183}, {'symbol': 'XRP/USDT:USDT-260820-1-C', 'ccxt_symbol': 'XRP/USDT:USDT-260820-1-C', 'buyOrSell': 'sell', 'size': 20.0, 'entry_price': 0.0071, 'hours_to_expiration': 27.21, 'strike': 1.0, 'type': 'CALL', 'futures_symbol': 'XRP/USDT:USDT', 'initMargin': 4.23712076}, {'symbol': 'XRP/USDT:USDT-260820-0.98-P', 'ccxt_symbol': 'XRP/USDT:USDT-260820-0.98-P', 'buyOrSell': 'sell', 'size': 20.0, 'entry_price': 0.0032, 'hours_to_expiration': 27.21, 'strike': 0.98, 'type': 'PUT', 'futures_symbol': 'XRP/USDT:USDT', 'initMargin': 3.66835796}, {'symbol': 'SOL/USDT:USDT-260821-74-P', 'ccxt_symbol': 'SOL/USDT:USDT-260821-74-P', 'buyOrSell': 'sell', 'size': 4.0, 'entry_price': 0.87, 'hours_to_expiration': 51.21, 'strike': 74.0, 'type': 'PUT', 'futures_symbol': 'SOL/USDT:USDT', 'initMargin': 37.92337951}]
       
+      
+    
+      
+      
 
 load_dotenv()
 API_KEY = os.getenv("BYBIT_API_KEY")
@@ -80,6 +84,8 @@ class TestClass:
         self.ticPrice = ticPrice
         self.ddh_coins = ['DOGE', 'SOL']
         self.listData = listData
+    
+                
     
     
     def process_hedging_logic2(self) -> bool:
@@ -685,16 +691,213 @@ class TestClass:
         # Если коробка данных цела — возвращаем True (даже если портфель пустой {})
         return True
    
+    # ++++++++++++++++++++++++++++=+++++++++++++++++================= 
+    
+    def analizCallStrike(self, coin_data: dict, midStrike = None):
+         """
+         ЗАЩИТА CALL-НОГИ (Версия 4.0 — С полным переворотом позиции):
+         Анализирует риски пробития рынка вверх выше минимального страйка CALL.
+         Если на аккаунте висит враждебный SHORT фьючерс, полностью гасит его в ноль
+         и переворачивается в LONG на весь объем проданной сетки CALL.
+         """
+         logger.info(f"def analizCallStrike(self")
+         dictPutSellAnaliz = {}
+         
+         # 1. Защитный барьер: если при роллировании CALL-ноги нет на аккаунте — мгновенно выходим
+         if not coin_data['optionsSellCall'] or coin_data['call_strike'] is None:
+             dictPutSellAnaliz['analizeBool'] = True
+             return dictPutSellAnaliz
+     
+         
+         # 2. Мгновенная распаковка готовых чистых данных из агрегатора
+         nameCoin        = coin_data['nameCoin']
+         call_strike     = coin_data['call_strike']
+         total_call_size = coin_data['total_call_size']
+         ticPrice        = coin_data['ticPrice']
+         open_futures    = coin_data['open_futures']
+         futures_symbol  = coin_data['optionsSellCall'][0]['futures_symbol']
+         side_call       = 'buy'
+         
+         # используем среднию при не правильном кондоре
+         if midStrike:
+             call_strike = midStrike
+             logger.info(f" сработол call_strike {call_strike} "
+                     f" защита midStrike {midStrike}  обратний инверсионый опцион ")
+    
+         # === УСЛОВНЫЙ ОПЕРАТОР: ТРИГГЕР ПРОБИТИЯ СТРАЙКА CALL ВВЕРХ ===
+         if ticPrice >= call_strike:
+             logger.warning(f"🚨 [ПАНИКА CALL] Цена {ticPrice} выше страйка CALL {call_strike}! Активирован LONG хэдж.")
+             logger.info(f"open_futures {open_futures}"
+                         f" nameCoin {nameCoin}")
+             # Извлекаем текущие параметры открытого фьючерса (actual size)
+             fut_size = 0.0
+             fut_side = 'none'
+         
+         # если наличие открытого фючерса запускает
+         if open_futures: 
+             for open_future in open_futures:
+                 # назначаем переменые из фючерса
+                 if open_future:
+                     fut_size = float(open_future.get('size', 0.0))
+                     fut_side = open_future.get('side', '').lower().strip()
+                     logger.info(f" 2fut_side {fut_side}, fut_size {fut_size}"
+                                 f"total_call_size  {total_call_size}")
+                     
+                     # --- УМНЫЙ РАСЧЕТ ДЕЛЬТЫ С УЧЕТОМ НАПРАВЛЕНИЯ ПОЗИЦИИ ---
+                 # если обьем и напровление совпало пропускаем
+                 if fut_side == 'buy' and total_call_size == fut_size:
+                     logger.info(f"if fut_side == 'buy' and total_call_size == fut_size:"
+                                 f"total_call_size  {total_call_size}")
+                     continue
+                 
+                 # отрабатываем если обем открытой позиции не равен 
+                 if fut_side == 'buy':
+                     # Стоим в нужную сторону (BUY) — просто добираем нехватку лотов
+                     delta = total_call_size - fut_size
+                     logger.info(f"elif fut_side == 'buy': {delta}")
+                     
+                     # работем с отрецательной дельтой
+                     # если дельта больше надо урезать олбьем 
+                     # открытого фюбчерса
+                     if delta < 0:
+                         logger.info(f"if delta < 0:")
+                         modul_delta = abs(delta)
+                         self.close_hedge_position(
+                             target_symbol=futures_symbol,
+                             target_side=fut_side,
+                             qty=modul_delta)
+                        
+                     # положительная дельта фючерса е
+                     # не  хватает добираем
+                     elif delta > 0:
+                         logger.info(f"elif delta > 0:")
+                         self.open_hedge_order(
+                             target_symbol=futures_symbol,
+                             side=fut_side,
+                             qty=delta )
+                     
+                 # если открыт хэдж закрываем или противоположный фючерс
+                 elif fut_side == 'sell':
+                     logger.info(f"elif fut_side == 'sell':")
+                 # Цена летит вверх, а у нас SHORT! Складываем
+                 # объемы для полного переворота
+                     self.close_hedge_position(
+                         target_symbol=futures_symbol,
+                         target_side=fut_side,
+                         qty=fut_size)
+    
+                 else:
+                     logger.warning(f"отлов щшибок  {open_future}"
+                                    f"{futures_symbol, side_call, fut_size} ")
+                 
+             # отрабатывает for open_future in open_futures:
+             logger.info(f"отрабатывает for open_future in open_futures:")    
+             dictPutSellAnaliz['analizeBool'] = False
+             return dictPutSellAnaliz    
+         
+         # если отсутвует какой либо фючерс открывае новый
+         elif open_futures == None:
+             logger.info(f"if open_futures == None:")
+             self.open_hedge_order(
+                target_symbol=futures_symbol,
+                side='buy',
+                qty=total_call_size)
+             dictPutSellAnaliz['analizeBool'] = False
+             return dictPutSellAnaliz
+    
+         else:
+             logger.error(f"cамый нижний еррор")
+               
+    
+    
+    
+    def analizPutStrike(self, coin_data: dict, 
+                        midStrike = None):
+        """
+        ЗАЩИТА PUT-НОГИ (Версия 4.0 — С полным переворотом позиции):
+        Анализирует риски пробития рынка вниз ниже максимального страйка PUT.
+        Если на аккаунте висит враждебный LONG фьючерс, полностью гасит его в ноль
+        и переворачивается в SHORT на весь объем проданной сетки PUT.
+        """
+        logger.info(f"def analizPutStrike(self,")
         
-    def razbor():
-        listD = []
-['SOL/USDT:USDT', 'buy'
-[2026-09-13 21:52:53] INFO:  ('1000PEPE/USDT:USDT', 'buy')
-[2026-09-13 21:52:53] INFO:  ('1000PEPE/USDT:USDT', 'sell')
-[2026-09-13 21:52:53] INFO:  ('XRP/USDT:USDT', 'buy')
-[2026-09-13 21:52:53] INFO:  ('XRP/USDT:USDT', 'sell')
+        # 1. Защитный барьер: если при роллировании PUT-ноги нет на аккаунте — мгновенно выходим
+        if not coin_data['optionsSellPut'] or coin_data['put_strike'] is None:
+            return
 
+        # 2. Мгновенная распаковка готовых чистых данных из агрегатора
+        nameCoin       = coin_data['nameCoin']
+        put_strike     = coin_data['put_strike']
+        total_put_size = coin_data['total_put_size']
+        ticPrice       = coin_data['ticPrice']
+        open_futures   = coin_data['open_futures']
+        
+        if midStrike:
+            put_strike = midStrike
+            logger.info(f" сработол put_strike {put_strike} "
+                        f" защита midStrike {midStrike}  обратний инверсионый опцион ")
+        # === УСЛОВНЫЙ ОПЕРАТОР: ТРИГГЕР ПРОБИТИЯ СТРАЙКА PUT ВНИЗ ===
+        if ticPrice <= put_strike:
+            logger.warning(f"🚨 [ПАНИКА PUT] Цена {ticPrice} ниже страйка PUT {put_strike}! Активирован SHORT хэдж.")
+            
+            # Извлекаем текущие параметры открытого фьючерса (actual size)
+            fut_size = 0.0
+            fut_side = 'none'
+            if open_futures:
+                for future in open_futures:
+                    fut_size = float(future.get('size', 0.0))
+                    fut_side = future.get('side', '').lower().strip()
 
+                # --- УМНЫЙ РАСЧЕТ ДЕЛЬТЫ С УЧЕТОМ НАПРАВЛЕНИЯ ПОЗИЦИИ ---
+                if fut_side == 'sell':
+                    # Стоим в нужную сторону (SELL) — просто добираем нехватку лотов шорта
+                    delta = total_put_size - fut_size
+                elif fut_side == 'buy':
+                    # Цена падает, а у нас LONG! Складываем объемы для полного переворота
+                    delta = total_put_size + fut_size
+                else:
+                    # Фьючерса нет совсем — берем чистый объем PUT-ноги
+                    delta = total_put_size
+
+            # -----------------------------------------------------------------
+            # КАСКАД УСЛОВНЫХ ОПЕРАТОРОВ ИСПОЛНЕНИЯ (Твоя структура)
+            # -----------------------------------------------------------------
+            
+            # БАРЬЕР 1: Если хэдж уже идеально набран и стоит в SELL — мгновенно выходим!
+            if total_put_size == fut_size and fut_side == 'sell': 
+                logger.debug(f"ℹ️ [PUT] Хэдж по {nameCoin} уже идеально равен риску ({fut_size}).")
+                
+                return 
+            
+            # БАРЬЕР 2: Если есть перекос объемов ИЛИ а направление 
+            # ерно (включая встречный лонг)
+            elif total_put_size != fut_size or fut_side == 'sell':            
+                logger.info(
+                    f"📉 [КОМАНДА PUT] Текущий тик {ticPrice} < PUT Страйка {put_strike}. "
+                    f"Целевой хэдж: SELL (SHORT) | Цель: {total_put_size} | Дельта переворота/добора: {delta}"
+                )
+
+                # Отправляем приказ в наш универсальный исполнитель ордеров
+                self.execute_hedge_adjustment(nameCoin=nameCoin, 
+                                              target_side='sell', 
+                                              delta=delta)
+                return
+            
+            elif fut_side != 'sell':
+                logger.warning(f" нога требует защиту другим фючом function" 
+                               f"analizPutStrike должна за хэджироать на следующей итерации")
+                self.execute_hedge_adjustment(nameCoin=nameCoin, 
+                                                  target_side='buy', 
+                                                  delta=delta)
+                return
+            
+            else:
+                logger.warning(f"что то непредвиденое"
+                               f" в функтион analizPutFunction")
+                     
+     
+     
+        
 
 if __name__ == "__main__":
     

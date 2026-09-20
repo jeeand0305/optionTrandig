@@ -182,7 +182,7 @@ def main2():
         
         
         optionsAll = clientBybit.get_active_open_options3()
-        futuresAll = clientBybit.get_active_futures_positions()
+        futuresAll = clientBybit.get_active_futures_positions_hedge()
         
         clientBybit.process_hedging_logic3(
             optionsAll=optionsAll,

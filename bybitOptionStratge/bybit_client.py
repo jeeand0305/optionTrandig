@@ -76,8 +76,7 @@ class BybitOptionBot:
 
                 
         logger.info("Подключение к Bybit (Опционы + Торговля) успешно инициализировано.")
-
-        
+       
     # main()
     def get_historical_closes_candals(self, base_coin: str, window: int = 30) -> list:
         """
@@ -139,7 +138,6 @@ class BybitOptionBot:
             logger.error(f"Ошибка при парсинге опционных данных: {e}")
             return None
         
-
     # main()
     def check_connection_and_balance(self): 
         """
@@ -198,7 +196,6 @@ class BybitOptionBot:
             logger.error(f"Ошибка при парсинге базовых монет опционов: {e}")
             return []
 
-
     # main()
     def get_option_expiration_dates(self, base_coin="BTC"):
         """
@@ -242,7 +239,6 @@ class BybitOptionBot:
         except Exception as e:
             logger.error(f"Ошибка получения цены для {symbol}: {e}")
             return None
-
 
     # main()
     def get_option_strikes(self, base_coin="BTC", 
@@ -784,7 +780,6 @@ class BybitOptionBot:
             return 'error'
 
 
-
     def _replace_order(self, old_id: str, symbol: str, side: str, qty: float, new_price: float) -> str:
         """Внутренний метод перевыставления ордера через Cancel + Create"""
         self._safe_cancel(old_id, symbol)
@@ -798,6 +793,7 @@ class BybitOptionBot:
             logger.error(f"Критическая ошибка при перевыставлении ордера: {e}")
             # Возвращаем старый ID, чтобы цикл попытался обработать его или завершиться
             return old_id
+        
 
     def _safe_cancel(self, order_id: str, symbol: str):
         """Внутренний безопасный метод отмены ордера"""
@@ -806,6 +802,7 @@ class BybitOptionBot:
         except Exception:
             # Игнорируем ошибку, если ордер исполнился прямо в момент отмены
             pass
+        
 
     def analyze_open_options(self, base_currency: str = "DOGE") -> dict:
         """
@@ -985,6 +982,7 @@ class BybitOptionBot:
             
         return active_options
     
+    
     def get_active_open_options2(self) -> list:
         """
         Находит все открытые позиции по опционам на аккаунте, 
@@ -1160,6 +1158,7 @@ class BybitOptionBot:
         except Exception as e:
             logger.error(f"❌ Критическая ошибка при открытии фьючерсного хеджа для {futures_symbol}: {e}")
             return None
+  
     
     def get_active_futures_positionsOneWay(self) -> dict:
         """
@@ -1313,6 +1312,7 @@ class BybitOptionBot:
         
         active_optionsDict = self.separate(listData=active_options)    
         return active_optionsDict
+
     
     def separate(self, listData: list) -> dict:
         # 1. Создаем финальный пустой словарь портфеля
@@ -1370,7 +1370,7 @@ class BybitOptionBot:
         False -> Проблем нет, позиция безопасна (open).
         """
     
-        logger.info("⏳ Запуск фонового сканирования рисков портфеля.")
+        logger.info("def process_hedging_logic3(self,.")
         
         # 1. Вызов внешних универсальных валидаторов структуры
         # Если данные невалидны — это критическая проблема данных, возвращаем True
@@ -1399,7 +1399,8 @@ class BybitOptionBot:
                 continue
             
             # Инициализируем парсер OptionAsset строго ОДИН раз для контракта
-            asset = OptionAsset(raw_symbol=options_list[0]["symbol"], exchange_instance=self.exchange)
+            asset = OptionAsset(raw_symbol=options_list[0]["symbol"], 
+                                exchange_instance=self.exchange)
             # provrka hedge and One Way perkluchaem na hedge
             self.check_position_mode_direct(
                 target_symbol=asset.futures_symbol)
@@ -1419,7 +1420,8 @@ class BybitOptionBot:
                     
                     if coin_data['put_strike'] > coin_data['call_strike']:
                         self.analiz_inverted_corridor(coin_data)
-                        logger.warning(f"🚨 Форс-мажор по {coin_upper} (инверсия). Требуется фиксация!")
+                        logger.warning(f"🚨 Форс-мажор по {coin_upper} "
+                                       f"(инверсия). Требуется фиксация!")
                         has_any_problem = True # Зафиксировали проблему
                         continue 
 
@@ -1496,7 +1498,7 @@ class BybitOptionBot:
         
         """
     
-        logger.info("⏳ Запуск фонового сканирования рисков портфеля.")
+        logger.info(f"def process_hedging_logic2(self,")
         
 
         # 1. kusok Вызов внешних универсальных валидаторов структуры
@@ -1609,6 +1611,8 @@ class BybitOptionBot:
         Принимает монету, целевую сторону защиты (buy/sell) и рассчитанную дельту объемов.
         Самостоятельно принимает решение: добрать позицию или частично сократить излишек.
         """
+        logger.info(f"def execute_hedge_adjustment(self")
+        
         # Округляем дельту до 4 знаков (защита от биржевого микро-мусора в плавающей точке)
         logger.info(f" delta {delta}")
         delta = round(delta, 4)
@@ -1641,6 +1645,9 @@ class BybitOptionBot:
                 # --- УСЛОВНЫЕ ОПЕРАТОРЫ ПЕРЕВОРОТА НАПРАВЛЕНИЯ ДЛЯ ЗАКРЫТИЯ ---
                 # Если целевая сторона хэджа LONG (buy), то закрывать излишек нужно ордером SELL
                 if clean_target_side == 'buy':
+                    order_side = 'buy'
+                    logger.info(f"if clean_target_side == 'buy':"
+                                f" {nameCoin, order_side, actual_qty}")
                     self.place_futures_hedge_order(
                         base_currency=nameCoin,
                         side=order_side,
@@ -1648,7 +1655,9 @@ class BybitOptionBot:
                     )
                 # Если целевая сторона хэджа SHORT (sell), то закрывать излишек нужно ордером BUY
                 elif clean_target_side == 'sell':
-                    order_side = 'buy'
+                    order_side = 'sell'
+                    logger.info(f"if clean_target_side == 'sell':"
+                                f" {nameCoin, order_side, actual_qty}")
                     self.place_futures_hedge_order(
                         base_currency=nameCoin,
                         side=order_side,
@@ -1671,13 +1680,14 @@ class BybitOptionBot:
             logger.error(f"💥 Критический сбой API при исполнении хэдж-ордера по {nameCoin}: {order_error}")
     
     
-    def analizCallStrike(self, coin_data: dict, midStrike = None):
+    def STARIEDATAanalizCallStrike(self, coin_data: dict, midStrike = None):
         """
         ЗАЩИТА CALL-НОГИ (Версия 4.0 — С полным переворотом позиции):
         Анализирует риски пробития рынка вверх выше минимального страйка CALL.
         Если на аккаунте висит враждебный SHORT фьючерс, полностью гасит его в ноль
         и переворачивается в LONG на весь объем проданной сетки CALL.
         """
+        logger.info(f"def analizCallStrike(self")
         dictPutSellAnaliz = {}
         
         # 1. Защитный барьер: если при роллировании CALL-ноги нет на аккаунте — мгновенно выходим
@@ -1701,50 +1711,184 @@ class BybitOptionBot:
         # === УСЛОВНЫЙ ОПЕРАТОР: ТРИГГЕР ПРОБИТИЯ СТРАЙКА CALL ВВЕРХ ===
         if ticPrice >= call_strike:
             logger.warning(f"🚨 [ПАНИКА CALL] Цена {ticPrice} выше страйка CALL {call_strike}! Активирован LONG хэдж.")
-            
+            logger.info(f"open_futures {open_futures}"
+                        f" nameCoin {nameCoin}")
             # Извлекаем текущие параметры открытого фьючерса (actual size)
             fut_size = 0.0
             fut_side = 'none'
-            if open_futures:
-                fut_size = float(open_futures.get('size', 0.0))
-                fut_side = open_futures.get('side', '').lower().strip()
-                logger.info(f" fut_side {fut_side}, fut_size {fut_size}")
-
-            # --- УМНЫЙ РАСЧЕТ ДЕЛЬТЫ С УЧЕТОМ НАПРАВЛЕНИЯ ПОЗИЦИИ ---
-            if fut_side == 'buy':
-                # Стоим в нужную сторону (BUY) — просто добираем нехватку лотов
-                delta = total_call_size - fut_size
-            if fut_side == 'sell':
-                # Цена летит вверх, а у нас SHORT! Складываем объемы для полного переворота
-                delta = total_call_size + fut_size
-            else:
-                # Фьючерса нет совсем — берем чистый объем CALL-ноги
-                delta = total_call_size
-
-            # -----------------------------------------------------------------
-            # КАСКАД УСЛОВНЫХ ОПЕРАТОРОВ ИСПОЛНЕНИЯ (Твоя структура)
-            # -----------------------------------------------------------------
+        
+        if open_futures == None:
+            self.open_hedge_order(
+                target_symbol=nameCoin,
+                side='buy',
+                qty=total_call_size)
             
-            # БАРЬЕР 1: Если хэдж уже идеально набран и стоит в BUY — мгновенно выходим!
+        elif open_futures: 
+            for open_future in open_futures:
+                if open_future:
+                    fut_size = float(open_future.get('size', 0.0))
+                    fut_side = open_future.get('side', '').lower().strip()
+                    logger.info(f" 1fut_side {fut_side}, fut_size {fut_size}")
+
+                    # --- УМНЫЙ РАСЧЕТ ДЕЛЬТЫ С УЧЕТОМ НАПРАВЛЕНИЯ ПОЗИЦИИ ---
+                if fut_side == 'buy' and total_call_size == fut_size:
+                    logger.info(f"futures good side, size")
+                    continue
+                
+                elif fut_side == 'buy':
+                    # Стоим в нужную сторону (BUY) — просто добираем нехватку лотов
+                    delta = total_call_size - fut_size
+                    logger.info(f"if fut_side == 'buy': {delta} ")
+                if fut_side == 'sell':
+                    # Цена летит вверх, а у нас SHORT! Складываем объемы для полного переворота
+                    delta = fut_size * -1
+                    logger.info(f"if fut_side == 'sell': {delta} ")
+                else:
+                    # Фьючерса нет совсем — берем чистый объем CALL-ноги
+                    delta = total_call_size
+
+                    # -----------------------------------------------------------------
+                # КАСКАД УСЛОВНЫХ ОПЕРАТОРОВ ИСПОЛНЕНИЯ (Твоя структура)
+                # -----------------------------------------------------------------
+
+                # БАРЬЕР 1: Если хэдж уже идеально набран и стоит в BUY — мгновенно выходим!
+
+                # БАРЬЕР 2: Если есть перекос объемов ИЛИ направления (включая встречный шорт)
+                if total_call_size != fut_size or fut_side != 'buy':            
+                    logger.info(
+                        f"📈 [КОМАНДА CALL] Текущий тик {ticPrice} > CALL Страйка"
+                        f"{call_strike}. "
+                        f"Целевой хэдж: BUY (LONG) | Цель: {total_call_size} | "
+                        f"Дельта переворота/добора: {delta}"
+                    )
+                        # Отправляем приказ в наш универсальный исполнитель ордеров
+                    self.execute_hedge_adjustment(nameCoin=nameCoin, target_side='buy', delta=delta)
+                    dictPutSellAnaliz['analizeBool'] = False
+                    return dictPutSellAnaliz    
+    
             if total_call_size == fut_size and fut_side == 'buy': 
                 logger.debug(f"ℹ️ [CALL] Хэдж по {nameCoin} уже идеально равен риску ({fut_size}).")
                 dictPutSellAnaliz['analizeBool'] = False
                 return dictPutSellAnaliz
-            
-            # БАРЬЕР 2: Если есть перекос объемов ИЛИ направления (включая встречный шорт)
-            elif total_call_size != fut_size or fut_side != 'buy':            
-                logger.info(
-                    f"📈 [КОМАНДА CALL] Текущий тик {ticPrice} > CALL Страйка {call_strike}. "
-                    f"Целевой хэдж: BUY (LONG) | Цель: {total_call_size} | Дельта переворота/добора: {delta}"
-                )
 
-                # Отправляем приказ в наш универсальный исполнитель ордеров
-                self.execute_hedge_adjustment(nameCoin=nameCoin, target_side='buy', delta=delta)
-                dictPutSellAnaliz['analizeBool'] = False
-                return dictPutSellAnaliz    
+
+    def analizCallStrike(self, coin_data: dict, midStrike = None):
+        """
+        ЗАЩИТА CALL-НОГИ (Версия 4.0 — С полным переворотом позиции):
+        Анализирует риски пробития рынка вверх выше минимального страйка CALL.
+        Если на аккаунте висит враждебный SHORT фьючерс, полностью гасит его в ноль
+        и переворачивается в LONG на весь объем проданной сетки CALL.
+        """
+        logger.info(f"def analizCallStrike(self")
+        dictPutSellAnaliz = {}
+        
+        # 1. Защитный барьер: если при роллировании CALL-ноги нет на аккаунте — мгновенно выходим
+        if not coin_data['optionsSellCall'] or coin_data['call_strike'] is None:
+            dictPutSellAnaliz['analizeBool'] = True
+            return dictPutSellAnaliz
     
-    
-    def analizPutStrike(self, coin_data: dict, 
+        
+        # 2. Мгновенная распаковка готовых чистых данных из агрегатора
+        nameCoin        = coin_data['nameCoin']
+        call_strike     = coin_data['call_strike']
+        total_call_size = coin_data['total_call_size']
+        ticPrice        = coin_data['ticPrice']
+        open_futures    = coin_data['open_futures']
+        futures_symbol  = coin_data['optionsSellCall'][0]['futures_symbol']
+        side_call       = 'buy'
+        
+        # используем среднию при не правильном кондоре
+        if midStrike:
+            call_strike = midStrike
+            logger.info(f" сработол call_strike {call_strike} "
+                    f" защита midStrike {midStrike}  обратний инверсионый опцион ")
+
+        # === УСЛОВНЫЙ ОПЕРАТОР: ТРИГГЕР ПРОБИТИЯ СТРАЙКА CALL ВВЕРХ ===
+        if ticPrice >= call_strike:
+            logger.warning(f"🚨 [ПАНИКА CALL] Цена {ticPrice} выше страйка CALL {call_strike}! Активирован LONG хэдж.")
+            logger.info(f"open_futures {open_futures}"
+                        f" nameCoin {nameCoin}")
+            # Извлекаем текущие параметры открытого фьючерса (actual size)
+            fut_size = 0.0
+            fut_side = 'none'
+        
+        # если наличие открытого фючерса запускает
+        if open_futures: 
+            for open_future in open_futures:
+                # назначаем переменые из фючерса
+                if open_future:
+                    fut_size = float(open_future.get('size', 0.0))
+                    fut_side = open_future.get('side', '').lower().strip()
+                    logger.info(f" 2fut_side {fut_side}, fut_size {fut_size}"
+                                f"total_call_size  {total_call_size}")
+                    
+                    # --- УМНЫЙ РАСЧЕТ ДЕЛЬТЫ С УЧЕТОМ НАПРАВЛЕНИЯ ПОЗИЦИИ ---
+                # если обьем и напровление совпало пропускаем
+                if fut_side == 'buy' and total_call_size == fut_size:
+                    logger.info(f"if fut_side == 'buy' and total_call_size == fut_size:"
+                                f"total_call_size  {total_call_size}")
+                    continue
+                
+                # отрабатываем если обем открытой позиции не равен 
+                if fut_side == 'buy':
+                    # Стоим в нужную сторону (BUY) — просто добираем нехватку лотов
+                    delta = total_call_size - fut_size
+                    logger.info(f"elif fut_side == 'buy': {delta}")
+                    
+                    # работем с отрецательной дельтой
+                    # если дельта больше надо урезать олбьем 
+                    # открытого фюбчерса
+                    if delta < 0:
+                        logger.info(f"if delta < 0:")
+                        modul_delta = abs(delta)
+                        self.close_hedge_position(
+                            target_symbol=futures_symbol,
+                            target_side=fut_side,
+                            qty=modul_delta)
+                       
+                    # положительная дельта фючерса е
+                    # не  хватает добираем
+                    elif delta > 0:
+                        logger.info(f"elif delta > 0:")
+                        self.open_hedge_order(
+                            target_symbol=futures_symbol,
+                            side=fut_side,
+                            qty=delta )
+                    
+                # если открыт хэдж закрываем или противоположный фючерс
+                elif fut_side == 'sell':
+                    logger.info(f"elif fut_side == 'sell':")
+                # Цена летит вверх, а у нас SHORT! Складываем
+                # объемы для полного переворота
+                    self.close_hedge_position(
+                        target_symbol=futures_symbol,
+                        target_side=fut_side,
+                        qty=fut_size)
+
+                else:
+                    logger.warning(f"отлов щшибок  {open_future}"
+                                   f"{futures_symbol, side_call, fut_size} ")
+                
+            # отрабатывает for open_future in open_futures:
+            logger.info(f"отрабатывает for open_future in open_futures:")    
+            dictPutSellAnaliz['analizeBool'] = False
+            return dictPutSellAnaliz    
+        
+        # если отсутвует какой либо фючерс открывае новый
+        elif open_futures == None:
+            logger.info(f"if open_futures == None:")
+            self.open_hedge_order(
+               target_symbol=futures_symbol,
+               side='buy',
+               qty=total_call_size)
+            dictPutSellAnaliz['analizeBool'] = False
+            return dictPutSellAnaliz
+
+        else:
+            logger.error(f"cамый нижний еррор")
+           
+
+    def STARIEDATAanalizPutStrike(self, coin_data: dict, 
                         midStrike = None):
         """
         ЗАЩИТА PUT-НОГИ (Версия 4.0 — С полным переворотом позиции):
@@ -1752,6 +1896,8 @@ class BybitOptionBot:
         Если на аккаунте висит враждебный LONG фьючерс, полностью гасит его в ноль
         и переворачивается в SHORT на весь объем проданной сетки PUT.
         """
+        logger.info(f"def analizPutStrike(self,")
+        
         # 1. Защитный барьер: если при роллировании PUT-ноги нет на аккаунте — мгновенно выходим
         if not coin_data['optionsSellPut'] or coin_data['put_strike'] is None:
             return
@@ -1775,19 +1921,20 @@ class BybitOptionBot:
             fut_size = 0.0
             fut_side = 'none'
             if open_futures:
-                fut_size = float(open_futures.get('size', 0.0))
-                fut_side = open_futures.get('side', '').lower().strip()
+                for future in open_futures:
+                    fut_size = float(future.get('size', 0.0))
+                    fut_side = future.get('side', '').lower().strip()
 
-            # --- УМНЫЙ РАСЧЕТ ДЕЛЬТЫ С УЧЕТОМ НАПРАВЛЕНИЯ ПОЗИЦИИ ---
-            if fut_side == 'sell':
-                # Стоим в нужную сторону (SELL) — просто добираем нехватку лотов шорта
-                delta = total_put_size - fut_size
-            elif fut_side == 'buy':
-                # Цена падает, а у нас LONG! Складываем объемы для полного переворота
-                delta = total_put_size + fut_size
-            else:
-                # Фьючерса нет совсем — берем чистый объем PUT-ноги
-                delta = total_put_size
+                # --- УМНЫЙ РАСЧЕТ ДЕЛЬТЫ С УЧЕТОМ НАПРАВЛЕНИЯ ПОЗИЦИИ ---
+                if fut_side == 'sell':
+                    # Стоим в нужную сторону (SELL) — просто добираем нехватку лотов шорта
+                    delta = total_put_size - fut_size
+                elif fut_side == 'buy':
+                    # Цена падает, а у нас LONG! Складываем объемы для полного переворота
+                    delta = total_put_size + fut_size
+                else:
+                    # Фьючерса нет совсем — берем чистый объем PUT-ноги
+                    delta = total_put_size
 
             # -----------------------------------------------------------------
             # КАСКАД УСЛОВНЫХ ОПЕРАТОРОВ ИСПОЛНЕНИЯ (Твоя структура)
@@ -1825,6 +1972,116 @@ class BybitOptionBot:
                 logger.warning(f"что то непредвиденое"
                                f" в функтион analizPutFunction")
                 
+ 
+    def analizPutStrike(self, coin_data: dict, 
+                         midStrike = None):
+        """
+        ЗАЩИТА PUT-НОГИ (Версия 4.0 — С полным переворотом позиции):
+        Анализирует риски пробития рынка вниз ниже максимального страйка PUT.
+        Если на аккаунте висит враждебный LONG фьючерс, полностью гасит его в ноль
+        и переворачивается в SHORT на весь объем проданной сетки PUT.
+        """
+        logger.info(f"def analizPutStrike(self,")
+        
+        # 1. Защитный барьер: если при роллировании PUT-ноги нет на аккаунте — мгновенно выходим
+        if not coin_data['optionsSellPut'] or coin_data['put_strike'] is None:
+            return
+ 
+        # 2. Мгновенная распаковка готовых чистых данных из агрегатора
+        nameCoin       = coin_data['nameCoin']
+        put_strike     = coin_data['put_strike']
+        total_put_size = coin_data['total_put_size']
+        ticPrice       = coin_data['ticPrice']
+        open_futures   = coin_data['open_futures']
+        futures_symbol = coin_data['optionsSellPut'][0]['futures_symbol']
+        side_put       = 'sell'
+        
+           # используем среднию при не правильном кондоре
+        if midStrike:
+            put_strike = midStrike
+            logger.info(f" сработол put_strike {put_strike} "
+                        f" защита midStrike {midStrike}  обратний инверсионый опцион ")
+            
+        # === УСЛОВНЫЙ ОПЕРАТОР: ТРИГГЕР ПРОБИТИЯ СТРАЙКА PUT ВНИЗ ===
+        if ticPrice <= put_strike:
+            logger.warning(f"🚨 [ПАНИКА PUT] Цена {ticPrice} ниже страйка PUT {put_strike}! Активирован SHORT хэдж.")
+            
+            # Извлекаем текущие параметры открытого фьючерса (actual size)
+            fut_size = 0.0
+            fut_side = 'none'
+        # если наличие открытого фючерса запускает 
+        if open_futures:
+            for future in open_futures:
+                 # назначаем переменые из фючерса
+                if future:
+                    fut_size = float(future.get('size', 0.0))
+                    fut_side = future.get('side', '').lower().strip()
+                    logger.info(f"if future fut_size{fut_size}"
+                                f" futside  {fut_side}")
+                    
+                # если обьем и напровление совпало пропускаем
+                if fut_side == 'sell' and total_put_size == fut_size:
+                    logger.info(f"if fut_side == 'sell' and total_put_size == fut_size:")
+                    continue
+                
+                 # отрабатываем если обем открытой позиции не равен 
+                if fut_side == 'sell':
+                    # Стоим в нужную сторону (SELL) — просто добираем нехватку лотов шорта
+                    delta = total_put_size - fut_size
+                    logger.info(f"if fut_side == 'sell' "
+                                f" delta {delta}")
+                    
+                    # работем с отрецательной дельтой
+                     # если дельта больше надо урезать олбьем 
+                     # открытого фюбчерса
+                    if delta < 0:
+                        # Цена падает, а у нас LONG! Складываем объемы для полного переворота
+                        logger.info(f"if delta < 0:")
+                        modul_delta = abs(delta)
+                        self.close_hedge_position(
+                            target_symbol=futures_symbol,
+                            target_side=fut_side,
+                            qty=modul_delta)
+                        
+                    # положительная дельта фючерса е
+                    # не  хватает добираем
+                    elif delta > 0:
+                        logger.info(f"elif delta > 0:")
+                        self.open_hedge_order(
+                            target_symbol=futures_symbol,
+                            side=fut_side,
+                            qty=delta )   
+                        
+                # если открыт хэдж закрываем или противоположный фючерс
+                elif fut_side == 'buy':
+                    logger.info(f"elif fut_side == 'buy':")
+                 # Цена летит вверх, а у нас SHORT! Складываем
+                 # объемы для полного переворота
+                    self.close_hedge_position(
+                        target_symbol=futures_symbol,
+                        target_side=fut_side,
+                        qty=fut_size)
+                    
+                else:
+                    logger.warning(f"отлов щшибок  {future}"
+                                 f"{futures_symbol, fut_size} ")
+                        
+            logger.info(f"analizPutStrike"
+                        f"отрабатывает for open_future in open_futures:")     
+            return
+        
+        # если отсутвует какой либо фючерс открывае новый
+        elif open_futures == None:
+            logger.info(f"if open_futures == None:")
+            self.open_hedge_order(
+               target_symbol=futures_symbol,
+               side='sell',
+               qty=total_put_size)
+    
+        else:
+            logger.error(f"cамый нижний еррор")
+
+ 
     
     def analizCoridorStrikes2(self, coin_data: dict) -> dict:
         """
@@ -1832,6 +2089,9 @@ class BybitOptionBot:
         Принимает готовый паспорт coin_data. Рассчитывает стандартные сценарии 
         положения цены и выносит вердикт о необходимости запуска защиты ног.
         """
+        
+        logger.info(f"def analizCoridorStrikes2(self")
+        
         dictPutSellAnaliz = {}
         
         # 1. Мгновенная распаковка готовых чистых данных (Ноль циклов for внутри!)
@@ -1858,11 +2118,16 @@ class BybitOptionBot:
         # Защита от KeyError: блок выполняется только если фьючерс реально существует
 
         if open_futures:
-            fut_open_price = float(open_futures.get('openPrice', 0.0))
+            # fut_open_price = float(open_futures.get('openPrice', 0.0))
             
             if put_strike < ticPrice < call_strike:
                 logger.warning(f" нужно срочно закрыть фючерс {nameCoin}"
                              f" тик цена в коридоре между страками  ")
+                for open_future in open_futures:
+                    # logger.info(f"ope")
+                    self.close_hedge_position(target_symbol= open_future.get('symbol'),
+                                              target_side=open_future.get('side'),
+                                              qty=open_future.get('size'))
                 dictPutSellAnaliz['analizeBool'] = False   
                 return dictPutSellAnaliz
             
@@ -1905,6 +2170,7 @@ class BybitOptionBot:
         Рассчитывает дельту объема относительно средней точки и отправляет приказ
         универсальному исполнителю ордеров.
         """
+        logger.info(f"def analiz_inverted_corridor(self,")
         # 1. Мгновенная распаковка готовых параметров из паспорта данных coin_data
         # Ноль повторных тяжелых циклов for или регулярных выражений внутри!
         nameCoin        = coin_data['nameCoin']
@@ -1964,6 +2230,8 @@ class BybitOptionBot:
         Строго за ОДИН проход по списку собирает массивы ног, накапливает общие объёмы,
         находит критические страйки и формирует эталонный паспорт данных монеты coin_data.
         """
+        logger.info(f"def aggregate_coin_data(self,")
+        
         optionsSellPut = []
         optionsSellCall = []
         total_call_size = 0.0
@@ -2039,15 +2307,16 @@ class BybitOptionBot:
             'ticPrice': ticPrice, # float(input(f" inter tic price coin {nameCoin} :")),                  # Текущий тик рынка
             'open_futures': futuresAll.get(nameCoin, None)    # Безопасный фьючерс без KeyError
         }
-        
-        # for key, volme in  coin_data.items():
-        #     print(key , volme)
+        for key, volme in coin_data.items():
+            logger.info(f" {key , volme}")
 
         return coin_data
     
     
     def is_futures_data_valid(self, futures_dict) -> bool:
         # Шаг 1: Проверка внешней коробки (Аналогично опционам)
+        logger.info(f"def is_futures_data_valid(self,")
+        
         if futures_dict is None:
             logger.error("❌ КРИТИЧЕСКАЯ ОШИБКА: Данные self.futures равны None!")
             return False
@@ -2060,16 +2329,18 @@ class BybitOptionBot:
         # Создаем список для сброса сломанных монет, чтобы не индусить
         corrupted_coins = []
         
-        for coin_name, fut_info in futures_dict.items():
+        for coin_name, fut_infos in futures_dict.items():
             # Извлекаем внутренние параметры фьючерса БЕЗ подмен (дефолт None)
-            raw_size  = fut_info.get('size', None)
-            raw_side  = fut_info.get('side', None)
-            raw_price = fut_info.get('openPrice', None)
+            for fut_info in fut_infos:  
+                raw_size  = fut_info.get('size', None)
+                raw_side  = fut_info.get('side', None)
+                raw_price = fut_info.get('openPrice', None)
 
-            # УСЛОВНЫЙ ОПЕРАТОР: Проверка внутренностей на None
-            if raw_size is None or raw_side is None or raw_price is None:
-                logger.error(f"❌ [ФЬЮЧЕРС БРАК] У монеты {coin_name} поля содержат None!")
-                corrupted_coins.append(coin_name)
+                # УСЛОВНЫЙ ОПЕРАТОР: Проверка внутренностей на None
+                if raw_size is None or raw_side is None or raw_price is None:
+                    logger.error(f"❌ [ФЬЮЧЕРС БРАК] У монеты {coin_name} "
+                                 f" поля содержат None!")
+                    corrupted_coins.append(coin_name)
 
         # Шаг 3: Очистка. Выжигаем только сломанные монеты, а здоровые оставляем в работе
         for bad_coin in corrupted_coins:
@@ -2082,6 +2353,7 @@ class BybitOptionBot:
         ВАЛИДАТОР ОПЦИОНОВ: Проверяет целостность внешней структуры портфеля.
         Защищает главный диспетчер от критического падения при итерации.
         """
+        logger.info(f" def is_options_data_valid(self,")
         # 1. Защита от полного отсутствия ответа (Сбой сети / таймаут API Bybit)
         if options_dict is None:
             logger.error("❌ КРИТИЧЕСКАЯ ОШИБКА: Данные self.options равны None! Робот ослеп.")
@@ -2106,12 +2378,11 @@ class BybitOptionBot:
         False -> На фьючерсе активен HEDGE MODE. Всё отлично для арбитража (чисто).
         True  -> Обнаружен ONE-WAY MODE или сбой API. Это проблема (риск).
         """
-        
+        logger.info(f"def check_position_mode_direct(self")
         try:
             # Запрашиваем структуру позиций напрямую по готовому символу
             positions = self.exchange.fetch_positions(symbols=[target_symbol])
-            logger.info(f"target_symbol, {target_symbol}"
-                        f"position {positions}")
+   
             # Твой лаконичный капкан: проверяем флаг у первого элемента структуры
             if positions[0].get('hedged') is True:
                 logger.info(f"✅ На {target_symbol} активен HEDGE MODE. Всё отлично (False).")
@@ -2143,6 +2414,7 @@ class BybitOptionBot:
         True  -> Ошибка, режим НЕ переключился (риск остался).
         False -> Успешно переключен в Hedge или уже стоял (всё чисто).
         """
+        logger.info(f"def set_position_mode_to_hedge_direct(self")
         try:
             logger.info(f"🔄 Попытка переключить {target_symbol} в Hedge Mode...")
             
@@ -2181,6 +2453,7 @@ class BybitOptionBot:
         True  -> Ошибка при выставлении ордера (риск/проблема осталась).
         False -> Ордер успешно исполнен, позиция открыта (всё чисто).
         """
+        logger.info(f"def open_hedge_order(")
         try:
             hedge_type = 'long' if side.lower() == 'buy' else 'short' 
             
@@ -2230,6 +2503,7 @@ class BybitOptionBot:
         True  -> Ошибка при закрытии (риск/проблема осталась).
         False -> Позиция успешно закрыта/уменьшена (всё чисто).
         """
+        logger.info(f"def close_hedge_position(self, ")
         try:
             #    esli prishel buy menyem sell ili inache
             pos_idx = 1 if target_side.lower() == 'buy' else 2
@@ -2292,7 +2566,7 @@ class BybitOptionBot:
         :return: Словарь вида {'BTC': {'side': 'buy', 'size': 0.1},
         'XRP': {'side': 'sell', 'size': 500}}
         """
-        logger.info("Сканирование аккаунта на наличие открытых фьючерсов хеджа...")
+        logger.info(" get_active_futures_positions_hedge(self) -> dict:")
         active_futures = {}
         permenList = []
         otborSymbol = None
@@ -2357,7 +2631,7 @@ class BybitOptionBot:
     
         
         
-bybitOpt = BybitOptionBot()
+# bybitOpt = BybitOptionBot()
 
 #  getD = bybitOpt.get_historical_closes_candals("DOGE")
 #  getD = bybitOpt.fetch_option_market_data('BTC')
@@ -2387,8 +2661,9 @@ bybitOpt = BybitOptionBot()
 # getD = bybitOpt.set_futures_leverage(
 #     base_currency='SOL',
 #     leverage=10)
-getD = bybitOpt.get_active_futures_positions_hedge()
-# getD = bybitOpt.process_hedging_logic()
+# getD_ = bybitOpt.get_active_futures_positions_hedge()
+
+# getD = bybitOpt.is_futures_data_valid(getD_)
 # getD = bybitOpt.check_position_mode_direct()#teting 08.09.26
 # getD = bybitOpt.set_position_mode_to_hedge_direct()
 # getD = bybitOpt.open_hedge_order(side='sell', qty=20.0)
@@ -2397,5 +2672,4 @@ getD = bybitOpt.get_active_futures_positions_hedge()
 #     target_side='buy',
 #     qty=10,)
 
-logger.info(f"{getD}")
-
+# logger.info(f"{getD}")

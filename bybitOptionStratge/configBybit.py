@@ -7,6 +7,8 @@ priceCoinMinOrder={
     "XRP":"10",
     "DOGE":"1000"}
 
+
+
 """
     Дорожка Long (positionIdx=1):
 side='buy'  ➡️ Наращиваем (открываем) Лонг [ccxt.com].
@@ -15,3 +17,4 @@ side='sell' ➡️ Сокращаем (закрываем) Лонг [ccxt.com].
 side='sell' ➡️ Наращиваем (открываем) Шорт [ccxt.com].
 side='buy'  ➡️ Сокращаем (закрываем) Шорт [ccxt.com].    
 """
+
