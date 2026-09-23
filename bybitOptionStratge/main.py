@@ -183,6 +183,7 @@ def main2():
         
         optionsAll = clientBybit.get_active_open_options3()
         futuresAll = clientBybit.get_active_futures_positions_hedge()
+    
         
         clientBybit.process_hedging_logic3(
             optionsAll=optionsAll,
@@ -208,12 +209,11 @@ if __name__ == "__main__":
 
     main2()
     
-    # main()
+    # # main()
+    # datas ='optionsSellPut', [{'symbol': 'MNT/USDT:USDT-260923-0.65-P', 'ccxt_symbol': 'MNT/USDT:USDT-260923-0.65-P', 'buyOrSell': 'sell', 'size': 20.0, 'entry_price': 0.0056, 'hours_to_expiration': 18.92, 'strike': 0.65, 'type': 'PUT', 'futures_symbol': 'MNT/USDT:USDT', 'initMargin': 2.47536336}]
+
     
-    # Создаем экземпляр нашего бота
-    # bot = BybitOptionBot()
+    # for dat in datas[1][0]:
+    #     print(dat)
     
-    # # Проверяем баланс и выводим цену Solana
-    # margin = bot.check_connection_and_balance()
-    # if margin is not None:
-    #     bot.get_sol_price()
+    # print(datas[1]['futures_symbol'])
