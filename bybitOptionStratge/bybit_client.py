@@ -1912,14 +1912,14 @@ class BybitOptionBot:
         
             # если наличие открытого фючерса запускает
             if open_futures:
-                for open_future in open_futures:
+                for future in open_futures:
                     # назначаем переменые из фючерса
-                    if open_future:
+                    if future:
                         logger.info(f"ticPrice {coin_data}"
                                                 f" nameCoin {nameCoin}")
-                        fut_size = float(open_future.get('size', 0.0))
-                        fut_side = open_future.get('side', '').lower().strip()
-                        fut_open_price = float(open_future.get('openPrice', ticPrice))
+                        fut_size = float(future.get('size', 0.0))
+                        fut_side = future.get('side', '').lower().strip()
+                        fut_open_price = float(future.get('openPrice', ticPrice))
                         logger.info(f" 2fut_side {fut_side}, fut_size {fut_size}"
                                     f"total_call_size  {total_call_size}"
                                     f"fut_open_price {fut_open_price}")
@@ -1932,7 +1932,8 @@ class BybitOptionBot:
                         self.close_hedge_position(
                             target_symbol=futures_symbol,
                             target_side=fut_side,
-                            qty=fut_size)
+                            qty=fut_size,
+                            pos_idx=future.get('positionIdx'))
 
                         time.sleep(5)
                         self.open_hedge_order(
@@ -1969,7 +1970,8 @@ class BybitOptionBot:
                             self.close_hedge_position(
                                 target_symbol=futures_symbol,
                                 target_side=fut_side,
-                                qty=modul_delta)
+                                qty=modul_delta,
+                                pos_idx=future.get('positionIdx'))
 
                         # положительная дельта фючерса е
                         # не  хватает добираем
@@ -1987,11 +1989,12 @@ class BybitOptionBot:
                     # объемы для полного переворота
                         self.close_hedge_position(
                             target_symbol=futures_symbol,
-                            target_side=fut_side,
-                            qty=fut_size)
+                            target_side='sell',
+                            qty=fut_size,
+                            pos_idx=future.get('positionIdx'))
 
                     else:
-                        logger.warning(f"отлов щшибок  {open_future}"
+                        logger.warning(f"отлов щшибок  {future}"
                                        f"{futures_symbol, side_call, fut_size} ")
 
                 # отрабатывает for open_future in open_futures:
@@ -2165,7 +2168,8 @@ class BybitOptionBot:
                         self.close_hedge_position(
                             target_symbol=futures_symbol,
                             target_side=fut_side,
-                            qty=fut_size)
+                            qty=fut_size,
+                            pos_idx=future.get('positionIdx'))
 
                         time.sleep(5)
                         self.open_hedge_order(
@@ -2200,7 +2204,8 @@ class BybitOptionBot:
                             self.close_hedge_position(
                                 target_symbol=futures_symbol,
                                 target_side=fut_side,
-                                qty=modul_delta)
+                                qty=modul_delta,
+                                pos_idx=future.get('positionIdx'))
 
                         # положительная дельта фючерса е
                         # не  хватает добираем
@@ -2219,7 +2224,8 @@ class BybitOptionBot:
                         self.close_hedge_position(
                             target_symbol=futures_symbol,
                             target_side=fut_side,
-                            qty=fut_size)
+                            qty=fut_size,
+                            pos_idx=future.get('positionIdx'))
 
                     else:
                         logger.warning(f"отлов щшибок  {future}"
@@ -2293,7 +2299,8 @@ class BybitOptionBot:
                     # logger.info(f"ope")
                     self.close_hedge_position(target_symbol= open_future.get('symbol'),
                                               target_side=open_future.get('side'),
-                                              qty=open_future.get('size'))
+                                              qty=open_future.get('size'),
+                                              pos_idx=open_future.get('positionIdx'))
                 dictPutSellAnaliz['analizeBool'] = False   
                 return dictPutSellAnaliz
             
@@ -2657,13 +2664,16 @@ class BybitOptionBot:
                              
                              target_symbol: str, 
                              target_side: str,
-                             qty: float = None) -> bool: # check function True
+                             qty: float = None,
+                             pos_idx:int=0) -> bool: # check function True
         """
         ЕСЛИ ЗАКРЫВАЕМ ЛОНГ ТО ПИШЕМ buy ЕСЛИ ЗАКРЫВАЕМ ШОРТ ТО sell 
         ЗАКРЫТИЕ ПОЗИЦИИ В РЕЖИМЕ HEDGE: Закрывает (или сокращает) позицию в указанной ячейке.
         :param target_symbol: Готовый CCXT-symbol фьючерса (н-р, "SOL/USDT:USDT").
         :param target_side: Какую ячейку закрываем: 'buy' или 'sell'.
         :param amount: Объем для закрытия. Если None — функция сама запросит баланс и закроет ВСЁ в ноль.
+        :param pos_idx: принцип работы в configBybit
+        
         
         ЛОГИКА ТВОЕГО СТАНДАРТА РИСКОВ:
         True  -> Ошибка при закрытии (риск/проблема осталась).
@@ -2672,11 +2682,13 @@ class BybitOptionBot:
         logger.info(f"def close_hedge_position(self, ")
         try:
             #    esli prishel buy menyem sell ili inache
-            pos_idx = 1 if target_side.lower() == 'buy' else 2
+            # pos_idx = 1 if target_side.lower() == 'buy' else 2
             # 2. Определяем противоположную сторону для закрытия
-            hedge_side = 'buy' if target_symbol.lower() == 'sell' else 'sell' 
+            hedge_side = 'buy' if target_side.lower() == 'sell' else 'sell' 
             # hedge_lower = hedge_type.lower()
             
+            logger.info(f"pos_idx - {pos_idx}"
+                        f"hedge_side - {hedge_side}")
             
             # 1. Если объем не указан, автоматически находим текущий размер позиции в этой ячейке
             if qty is None:
@@ -2745,6 +2757,7 @@ class BybitOptionBot:
                 "settleCoin": "USDT"
             })
             
+            
             if isinstance(positions, dict):
                 positions_list = positions.get('result', {}).get('list', [])
             elif isinstance(positions, list):
@@ -2753,10 +2766,11 @@ class BybitOptionBot:
                 positions_list = []
 
             for pos in positions_list:
-                logger.debug(f"fucher-pos {pos}")
+                # logger.info(f"fucher-pos {pos}  ")
                 symbol = pos.get('symbol', '') # Напр: "XRPUSDT" или "SOLUSDT"
                 count+=1
                 try:
+                    positionIdx = int(pos['info'].get('positionIdx',))
                     contracts = float(pos.get('size', pos.get('contracts', 0.0)))
                     entryPrice = float(pos.get('entryPrice', ''))
                     leverage = float(pos.get("leverage", ""))
@@ -2783,7 +2797,8 @@ class BybitOptionBot:
                         "size": abs(contracts), # Объем фьючерса
                         "openPrice": entryPrice, # price sell or buy 
                         "leverage": leverage, 
-                        "initMargin": initialMargin #count init cach
+                        "initMargin": initialMargin, #count init cach
+                        "positionIdx": positionIdx
                     })
                     
                     active_futures[coin[0:-2]] = permenList                                                      
@@ -2797,7 +2812,7 @@ class BybitOptionBot:
     
         
         
-# bybitOpt = BybitOptionBot()
+bybitOpt = BybitOptionBot()
 
 #  getD = bybitOpt.get_historical_closes_candals("DOGE")
 #  getD = bybitOpt.fetch_option_market_data('BTC')
@@ -2827,7 +2842,7 @@ class BybitOptionBot:
 # getD = bybitOpt.set_futures_leverage(
 #     base_currency='SOL',
 #     leverage=10)
-# getD_ = bybitOpt.get_active_futures_positions_hedge()
+getD = bybitOpt.get_active_futures_positions_hedge()
 
 # getD = bybitOpt.is_futures_data_valid(getD_)
 # getD = bybitOpt.check_position_mode_direct()#teting 08.09.26
@@ -2835,7 +2850,8 @@ class BybitOptionBot:
 # getD = bybitOpt.open_hedge_order(side='sell', qty=20.0)
 # getD = bybitOpt.close_hedge_position(
 #     target_symbol="XRP/USDT:USDT",
-#     target_side='buy',
-#     qty=10,)
+#     target_side='sell',
+#     qty=10,
+#     pos_idx=2)
 
-# logger.info(f"{getD}")
+logger.info(f"{getD}")
