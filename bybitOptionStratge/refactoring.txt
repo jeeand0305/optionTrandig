@@ -4,3 +4,7 @@
 close_hedge_position добавлена positionIdx запращивается pos_idx. Для правильной оценки и закрытия опционов
 get_active_futures_positions_hedge добавлен в словарь positionIdx
 Внесены изменения косательно close_hedge_position изменения прошли в ; analizCoridorStrikes2, analizPutStrike, analizCallStrike 
+1.0.1
+analiz_inverted_corridor добавлены функции которые вылетали при повторной проверки
+добавлена разбивка фючерса for и проверка по открытому фбчерса по тотношение к сденей 
+цены страйков опционов

@@ -2016,7 +2016,7 @@ class BybitOptionBot:
                 return dictPutSellAnaliz
 
         elif ticPrice < call_strike:
-            logger.гтащ(f"LONG хэдж не требуется.")            
+            logger.info(f"LONG хэдж не требуется.")            
             dictPutSellAnaliz['analizeBool'] = False
             return dictPutSellAnaliz 
 
@@ -2367,26 +2367,77 @@ class BybitOptionBot:
         fut_size = 0.0
         fut_side = 'none'
         if open_futures:
-            fut_size = float(open_futures.get('size', 0.0))
-            fut_side = open_futures.get('side', '').lower().strip()
-
+            for future in open_futures:
+                logger.info(f"if open_futures:"
+                            f" {open_futures}")
+                fut_size = float(future.get('size', 0.0))
+                fut_side = future.get('side', '').lower().strip()
+                fut_open_price = float(future.get("openPrice", 0.0))
+                fut_pos_idx = int(future.get('positionIdx', 0))
+                coin_data['call_strike'] = mid_price
+                coin_data['put_strike'] = mid_price
+                
+                
+                logger.info(f"coin_data {coin_data}")
+                # защита кэлл опциона
+                # цена фучерса выше и открыта нужный хэдж
+                if mid_price <= fut_open_price and fut_side == "buy":
+                    logger.info(f"if mid_price <= fut_open_price "
+                                f" and fut_side == buy:")
+                    self.analizCallStrike(coin_data=coin_data,
+                                          midStrike=mid_price)
+                    continue
+                # цена фучерса выше и открыта неправильный хэдж 
+                elif mid_price <= fut_open_price and fut_side != "buy":
+                    logger.info(f"elif mid_price <= fut_open_price "
+                                f" and fut_side != buy:  ")
+                    self.close_hedge_position(target_side=fut_side,
+                                              qty=fut_size,
+                                              pos_idx=fut_pos_idx)
+                    continue
+                
+                # защита пут опциона  
+                # цена фучерса ниже и открыта нужный хэдж
+                elif mid_price >= fut_open_price and fut_side == "sell":
+                    logger.info(f"if mid_price <= fut_open_price "
+                                f" and fut_side == sell:")
+                    logger.info(f"coin_data {coin_data}")
+                    self.analizCallStrike(coin_data=coin_data,
+                                          midStrike=mid_price)
+                    continue
+                
+                # цена фучерса ниже и открыта неправильный хэдж 
+                elif mid_price >= fut_open_price and fut_side != "sell":
+                    logger.info(f"elif mid_price <= fut_open_price "
+                                f" and fut_side != sell:  ")
+                    self.close_hedge_position(target_side=fut_side,
+                                              qty=fut_size,
+                                              pos_idx=fut_pos_idx)
+                    continue
+                
+                
         # =====================================================================
         # КУСОК ВЕТВЛЕНИЯ ОТНОСИТЕЛЬНО СЕРЕДИНЫ И АВТОМАТИЧЕСКОГО РАСЧЕТА ДЕЛЬТЫ
         # =====================================================================
         
-        # --- СЦЕНАРИЙ А: ЦЕНА НАХОДИТСЯ НА СЕРЕДИНЕ ИЛИ ВЫШЕ (100+) ---
-        if mid_price < ticPrice:
-            # if total_put_size == fut_size and fut_side == 'buy':
-            logger.info(f"work inversi CALL")
-            self.analizCallStrike(coin_data=coin_data, midStrike=mid_price)
-            return 
+        elif open_futures is None:
+            logger.info(f"elif open_futures is None:")
+            # --- СЦЕНАРИЙ А: ЦЕНА НАХОДИТСЯ НА СЕРЕДИНЕ ИЛИ ВЫШЕ (100+) ---
+            logger.info(f"proshel uslovni operator /  if open_futures:")
+            if mid_price < ticPrice:
+                logger.info(f"if mid_price < ticPrice:")
+                # if total_put_size == fut_size and fut_side == 'buy':
+                self.analizCallStrike(coin_data=coin_data, midStrike=mid_price)
+                logger.info(f"work inversi CALL")
+                return 
+                    
                 
-            
-        # --- СЦЕНАРИЙ Б: ЦЕНА УПАЛА НИЖЕ МАТЕМАТИЧЕСКОЙ СЕРЕДИНЫ (<100) ---
-        elif ticPrice <= mid_price:
-            logger.info(f"work inversi PUT")
-            self.analizPutStrike(coin_data=coin_data, midStrike=mid_price)
-            return 
+            # --- СЦЕНАРИЙ Б: ЦЕНА УПАЛА НИЖЕ МАТЕМАТИЧЕСКОЙ СЕРЕДИНЫ (<100) ---
+            elif ticPrice <= mid_price:
+                logger.info(f"elif ticPrice <= mid_price:")
+                self.analizPutStrike(coin_data=coin_data, midStrike=mid_price)
+                logger.info(f"work inversi PUT")
+                return 
         
         else:
             logger.warning(f" bag v function analiz_inverted_corridor")
@@ -2812,7 +2863,7 @@ class BybitOptionBot:
     
         
         
-bybitOpt = BybitOptionBot()
+# bybitOpt = BybitOptionBot()
 
 #  getD = bybitOpt.get_historical_closes_candals("DOGE")
 #  getD = bybitOpt.fetch_option_market_data('BTC')
@@ -2842,7 +2893,7 @@ bybitOpt = BybitOptionBot()
 # getD = bybitOpt.set_futures_leverage(
 #     base_currency='SOL',
 #     leverage=10)
-getD = bybitOpt.get_active_futures_positions_hedge()
+# getD = bybitOpt.get_active_futures_positions_hedge()
 
 # getD = bybitOpt.is_futures_data_valid(getD_)
 # getD = bybitOpt.check_position_mode_direct()#teting 08.09.26
@@ -2854,4 +2905,4 @@ getD = bybitOpt.get_active_futures_positions_hedge()
 #     qty=10,
 #     pos_idx=2)
 
-logger.info(f"{getD}")
+# logger.info(f"{getD}")
