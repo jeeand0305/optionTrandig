@@ -50,6 +50,7 @@ class BybitOptionBot:
             'enableRateLimit': True,  # Защита от блокировок за частые запросы
             'options': {
                 'adjustForTimeDifference': True,# АВТО-КОРРЕКЦИЯ ВРЕМЕНИ 
+                'recvWindow': 20000,
                 'defaultType': 'option',    # Работаем по умолчанию с опционами
                 'loadAllOptions': True      # Принудительно подгружаем опционные рынки
             }
