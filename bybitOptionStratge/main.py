@@ -193,7 +193,7 @@ def main2():
         #                                 optionsList=optionsAll['SOL'],
         #                                 futuresAll=futuresAll['SOL'])
         
-        time.sleep(300)
+        time.sleep(600)
         count +=1
         
     
