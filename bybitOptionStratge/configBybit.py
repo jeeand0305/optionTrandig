@@ -5,7 +5,8 @@ priceCoinMinOrder={
     "SOL":"1.0",
     "MNT":"10",
     "XRP":"10",
-    "DOGE":"1000"}
+    "DOGE":"1000",
+    "HYPE":"1.0"}
 
 
 

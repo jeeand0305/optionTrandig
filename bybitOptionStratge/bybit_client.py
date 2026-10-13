@@ -1,5 +1,6 @@
 import sys
 import os
+import configBybit
 
 # Находим путь к корневой директории всего проекта (ProjectOption)
 # os.path.abspath(__file__) дает путь к bybit_client.py
@@ -42,7 +43,7 @@ class BybitOptionBot:
         # Флаг loadAllOptions обязателен, 
         # чтобы CCXT подгружал опционные рынки
 
-        self.ddh_coins = ['DOGE', 'SOL']
+        self.ddh_coins = []#убрали хэджирование позиции
                 # 1. Формируем единую конфигурацию
         exchange_config = {
             'apiKey': API_KEY,
@@ -1388,6 +1389,10 @@ class BybitOptionBot:
         if not optionsAll:
             logger.info("ℹ️ Портфель опционов пуст. Рисков нет (False).")
             return False
+        
+        #отчищает от всех фючерсов которые защищали опцион если таковые остались
+        self.clear_futures(allFutures=futuresAll,
+                           allOptions=optionsAll)
         
         has_any_problem = False  # Переменная для отслеживания проблем по всему портфелю
 
@@ -2862,7 +2867,24 @@ class BybitOptionBot:
             
         return active_futures
     
+    def clear_futures(self,
+                        allFutures,
+                        allOptions):
+        logger.info(f" def clear_futures(self,")
+        nameTotalCoin = configBybit.priceCoinMinOrder
         
+        for coin in nameTotalCoin:
+            # print("все монеты которые могут быть опционы", coin)
+            if coin in allFutures:
+                 # print("все монеты которые открыты фючи под опционы", coin)
+                if coin not in allOptions:
+                    logger.info(f"монеты под которые истекли опционы {coin}")
+                    self.close_hedge_position(
+                        target_symbol=allFutures[coin][0].get('symbol'),
+                        target_side=allFutures[coin][0].get('side'),
+                        qty=allFutures[coin][0].get('size'),
+                        pos_idx=allFutures[coin][0].get('positionIdx')
+                    )
         
 # bybitOpt = BybitOptionBot()
 
@@ -2906,4 +2928,7 @@ class BybitOptionBot:
 #     qty=10,
 #     pos_idx=2)
 
-# logger.info(f"{getD}")
+# logger.info(f"type {type(getD)},  {getD}")
+
+# for i in getD:
+#     print(i)
