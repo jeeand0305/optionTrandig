@@ -2557,9 +2557,16 @@ class BybitOptionBot:
 
         # Шаг 2: Внутренний аудит полей (Таможня для каждого открытого фьючерса)
         # Создаем список для сброса сломанных монет, чтобы не индусить
+        
+        
         corrupted_coins = []
         
         for coin_name, fut_infos in futures_dict.items():
+             # Пустой список или None — монета невалидна, скипаем
+            if not fut_infos:
+                corrupted_coins.append(coin_name)
+                continue
+            
             # Извлекаем внутренние параметры фьючерса БЕЗ подмен (дефолт None)
             for fut_info in fut_infos:  
                 raw_size  = fut_info.get('size', None)
@@ -2573,7 +2580,7 @@ class BybitOptionBot:
                     corrupted_coins.append(coin_name)
 
         # Шаг 3: Очистка. Выжигаем только сломанные монеты, а здоровые оставляем в работе
-        for bad_coin in corrupted_coins:
+        for bad_coin in set(corrupted_coins):
             del futures_dict[bad_coin]
         return True
    
