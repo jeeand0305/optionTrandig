@@ -1941,12 +1941,12 @@ class BybitOptionBot:
                     #         qty=fut_size,
                     #         pos_idx=future.get('positionIdx'))
 
-                        time.sleep(5)
-                        self.open_hedge_order(
-                            target_symbol=futures_symbol,
-                            side=fut_side,
-                            qty=fut_size
-                        )
+                    #     time.sleep(5)
+                    #     self.open_hedge_order(
+                    #         target_symbol=futures_symbol,
+                    #         side=fut_side,
+                    #         qty=fut_size                        )
+
 
                         logger.info(f"if fut_side == 'buy' and total_call_size == fut_size:"
                                     f"total_call_size  {total_call_size}")
@@ -2166,7 +2166,7 @@ class BybitOptionBot:
                                     f" futside  {fut_side}"
                                     f"fut_open_price {fut_open_price}")
 
-# инструмент может генерить убытки если тик прайс топчется около страйка
+                    # инструмент может генерить убытки если тик прайс топчется около страйка
                     # можно сделать еслди цена подходит ближе к страйку
                     # чобы улучшить цене покупки фючерса если он пойдет мимо стрika
                     # if (fut_side == 'sell' and total_put_size == fut_size
@@ -2177,11 +2177,11 @@ class BybitOptionBot:
                     #         qty=fut_size,
                     #         pos_idx=future.get('positionIdx'))
 
-                        time.sleep(5)
-                        self.open_hedge_order(
-                            target_symbol=futures_symbol,
-                            side=fut_side,
-                            qty=fut_size)
+                    #     time.sleep(5)
+                    #     self.open_hedge_order(
+                    #         target_symbol=futures_symbol,
+                    #         side=fut_side,
+                    #         qty=fut_size)
 
                         logger.info(f"(fut_side == 'buy' and total_put_size == fut_size"
                                     f"and put_strike > ticPrice > fut_open_price )::"
