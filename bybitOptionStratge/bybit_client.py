@@ -1,6 +1,7 @@
 import sys
 import os
-import configBybit
+#import configBybit
+from . import configBybit
 
 # Находим путь к корневой директории всего проекта (ProjectOption)
 # os.path.abspath(__file__) дает путь к bybit_client.py
@@ -2606,6 +2607,7 @@ class BybitOptionBot:
        
     #chekaem kak ispolzuetca metod open position futures
     # hedge - false, one way = true   
+    
     def check_position_mode_direct(self, target_symbol:  str = 'XRP/USDT:USDT') -> bool:
         """
         УНИВЕРСАЛЬНЫЙ ЧЕКЕР РЕЖИМА (Прямая лаконичная версия):
@@ -2873,6 +2875,7 @@ class BybitOptionBot:
             logger.error(f"❌ Крах при получении фьючерсных позиций: {e}")
             
         return active_futures
+  
     
     def clear_futures(self,
                         allFutures,

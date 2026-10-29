@@ -1,0 +1,65 @@
+1. Старт (Точка входа)
+Файл: load_history.py
+Срабатывает if __name__ == '__main__': run_etl().
+Запускается функция run_etl(weeks=9).
+
+2. Формирование времени (Разбивка на недели)
+Функция: end_or_start_time(countWeekIteration=weeks)
+Она берет текущее время и отнимает по 7 дней в цикле. Возвращает список таймстемпов (в миллисекундах), например: [t1, t2, t3 ... t10]. Это нужно, чтобы Bybit не ругался на слишком большой промежуток времени.
+
+3. Запрос к API (Extract)
+Функция: data_close_option(dataTime)
+Она берет этот список и идет циклом по парам (start, end). Внутри создается сессия HTTP (из pybit) и делается запрос:
+session.get_closed_options_positions(category="option", startTime=..., endTime=...).
+Результат (сырой JSON от Bybit) передается в парсер.
+
+4. Парсинг и разворачивание (Transform)
+Функция: parse_closed_pnl(resp)
+
+Проверяет retCode == 0 (успех).
+
+Берет список resp["result"]["list"] (это сырые сделки).
+
+Идет циклом по каждой сделке, вытаскивает qty, entry, exit, комиссии.
+
+Параллельно вызывает parse_option_symbol() — чтобы из строки XRP-27SEP26-1.52-P-USDT вытащить base, expiry, strike, type.
+
+Формирует чистый словарь (dict) по каждой сделке.
+Возвращает список словарей: [{"trades": [...]}, {"trades": [...]}] (список страниц).
+Затем в run_etl это все склеивается в один плоский список flat_trades (108 штук).
+
+5. Подключение к БД
+В run_etl вызывается load_db_config() и get_connection(). Открывается коннект к Postgres (база demo).
+
+6. Подготовка таблицы (Schema)
+Функция: create_schema(conn) (файл db.py)
+
+Создает futures_positions (если ее нет).
+
+Дропает options_positions (DROP TABLE CASCADE).
+
+Создает options_positions заново с нужными колонками (fees_usdt, delivery_fee и т.д.).
+
+Создает индексы и UNIQUE (symbol, side, close_time).
+
+7. Сохранение (Load)
+Вызывается OptionsRepository(conn).save_many(flat_trades).
+Внутри OptionsRepository (файл repository.py):
+
+Берет список flat_trades.
+
+Метод _to_row(t) переводит каждый словарь в кортеж (tuple) из 14 значений. Здесь же _delivery_fee превращает "" в None, а "0.00000000" в 0.0.
+
+Используется execute_values (быстрая пачечная вставка psycopg2) с запросом:
+INSERT INTO options_positions (...) VALUES %s ON CONFLICT (symbol, side, close_time) DO NOTHING.
+
+Делает conn.commit().
+
+Возвращает количество вставленных строк.
+
+8. Завершение
+В run_etl срабатывает блок finally: conn.close().
+В терминал выводится лог: "Соединение с БД закрыто".
+
+Короткая схема потока данных:
+run_etl -> end_or_start_time (недели) -> data_close_option (запрос) -> parse_closed_pnl (чистка) -> flat_trades (108 dict) -> create_schema (таблица) -> OptionsRepository.save_many (маппинг) -> PostgreSQL.
